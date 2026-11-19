@@ -11,7 +11,9 @@
  *   * 同一项目刷新失败：照旧保留（#561 的行为不回退）。
  * 另有一条管换代：A 在切走之前发出的请求切完才回来，不许落地。
  */
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+vi.mock('@/lib/closeGuard', () => ({ requestLeaveDocument: vi.fn(async () => true) }))
 
 import { setCurrentProjectId } from '@/lib/session'
 import type { PanelsResponse } from '@/lib/api'

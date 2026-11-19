@@ -9,7 +9,7 @@
     "ai_agent_probe_timeout": "Checking {{path}} timed out. You can try again; your previous setting is unchanged.",
     "ai_agent_unknown": "Unknown coding agent: {{agent}}.",
     "ai_revert_conflict": "{{script}} has changed since this AI edit. Reverting would overwrite those later changes, so nothing was reverted.",
-    "ai_revert_failed":"Couldn’t revert the AI changes: {{reason}}",
+    "ai_revert_failed": "Couldn’t revert the AI changes: {{reason}}",
     "ai_start_failed": "Couldn’t start the AI task: {{reason}}",
     "annotations_need_pdf": "This asset has no vector PDF. Annotations can’t be written back to the original yet.",
     "artifact_rejected": "The exported file didn’t pass the {{policy}} check ({{failed}}) and was not published.",
@@ -192,7 +192,28 @@
     "write_back_persist_failed": "Can’t write back: the backup or the new file couldn’t be flushed to disk ({{reason}}). Nothing was changed — check disk space and permissions, then retry.",
     "write_back_warnings": "Can’t write back. The engine reported warnings during replay.",
     "write_failed": "Couldn’t write to disk. Your local copy is still here — try again: {{reason}}",
-    "pinned_full": "You can bookmark up to {{max}} projects. Remove a bookmark first."
+    "pinned_full": "You can bookmark up to {{max}} projects. Remove a bookmark first.",
+    "arial_missing": "Genuine Arial was not found. Install it and restart the service.",
+    "arial_invalid": "The supplied font is not genuine Arial or the requested face does not match.",
+    "arial_embedding_restricted": "This Arial font does not permit embedding. Export is unavailable.",
+    "glyph_missing": "{{family}} cannot draw these characters: {{chars}}. Edit the text; no font substitution is allowed.",
+    "text_preview_invalid": "Invalid canvas text preview parameters.",
+    "csv_empty": "CSV import failed: {{detail}}",
+    "csv_too_large": "CSV import failed: {{detail}}",
+    "csv_encoding": "CSV import failed: {{detail}}",
+    "csv_invalid": "CSV import failed: {{detail}}",
+    "csv_columns": "CSV import failed: {{detail}}",
+    "csv_headers": "CSV import failed: {{detail}}",
+    "csv_row_width": "CSV import failed: {{detail}}",
+    "csv_too_many_rows": "CSV import failed: {{detail}}",
+    "csv_no_data": "CSV import failed: {{detail}}",
+    "csv_mapping": "CSV import failed: {{detail}}",
+    "csv_non_numeric": "CSV import failed: {{detail}}",
+    "csv_label": "CSV import failed: {{detail}}",
+    "csv_directory": "CSV import failed: {{detail}}",
+    "local_font_missing": "Genuine {{family}} was not found. Install it and restart the service.",
+    "local_font_invalid": "The supplied font is not genuine {{family}} or the requested weight/style does not match.",
+    "local_font_embedding_restricted": "This {{family}} font does not permit embedding. Export is unavailable."
   },
   "engine": {
     "apply": "Apply",
@@ -476,7 +497,8 @@
     "textWeightPolicy": "The profile expects {{role}} to be {{want}}; currently {{got}}.",
     "tickDirection": "Tick direction is {{got}}; the profile requires {{want}}",
     "tickLabelCount": "{{axis}} has {{count}} tick labels; the profile suggests keeping it under {{max}}",
-    "unappliedOverride": "{{count}} figure edits on this one haven’t been applied to the render, so the output won’t match the canvas."
+    "unappliedOverride": "{{count}} figure edits on this one haven’t been applied to the render, so the output won’t match the canvas.",
+    "canvasFontUnavailable": "Local {{family}} or the selected face is unavailable; preview and export cannot be verified. No font substitution is allowed."
   },
   "problems": {
     "ariaLocate": "locate this object",

@@ -3,7 +3,7 @@
  *
  * 载入的旧文档里可能有重复的 (gid, prop)（历史写法 / 外部改过的 JSON）。引擎按
  * last-wins 取值（`engine/patchspec.py` 的去重：同一个 (gid, prop) 只留最后一条），
- * 所以前端的写入（`store/actions.upsertOverrides`、同值 no-op 判据）改的、比的都是
+ * 所以前端的写入（本模块的 `upsertOverrides`、同值 no-op 判据）改的、比的都是
  * 最后那条；读取方（检查器控件、几何辅助、对齐基线……）也必须读最后那条——读第一条
  * 的话，改完之后引擎画的是新值、控件却一直显示过期的旧值，位置类编辑还会拿旧值算
  * 下一次拖动，画面会跳（#587 评审 P1）。
@@ -11,6 +11,8 @@
  * 按 (gid, prop) 取 override 的值一律经这里，不要再写 `overrides.find(...)`：
  * `find` 回的是第一条。
  */
+
+import type { PanelOverride } from '@/types/document'
 
 type OverrideKey = { readonly gid: string; readonly prop: string }
 
@@ -40,4 +42,16 @@ export function effectiveOverride<T extends OverrideKey>(
 export function isEffectiveOverrideAt(overrides: readonly OverrideKey[], i: number): boolean {
   const o = overrides[i]
   return effectiveOverrideIndex(overrides, o.gid, o.prop) === i
+}
+
+/** Update the effective entry in place, preserving identity and variant-key order. */
+export function upsertOverrides(
+  panel: { overrides: PanelOverride[] },
+  patches: { gid: string; prop: string; value: unknown }[],
+) {
+  for (const patch of patches) {
+    const index = effectiveOverrideIndex(panel.overrides, patch.gid, patch.prop)
+    if (index >= 0) panel.overrides[index] = { ...panel.overrides[index], ...patch }
+    else panel.overrides.push(patch)
+  }
 }

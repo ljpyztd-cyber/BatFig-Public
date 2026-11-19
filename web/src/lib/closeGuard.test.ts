@@ -1,146 +1,154 @@
-/**
- * 关窗询问闸的前端一半（issue #223）。
- *
- * 这里量的是**答复**：壳问一句「能关吗」，六个保存状态各该答什么，用户点了
- * 三选一里的哪个之后窗口该不该关。壳那一半（拦 / 看门狗 / 代号）在
- * `src-tauri/src/main.rs` 的 `CloseGate` 单测里，两侧的词汇表由
- * `tests/test_desktop_close_guard.py` 比对。
- *
- * **jsdom 里 `isDesktop()` 恒假**，所以 `resolveDesktopCloseRequest` 必须换成
- * 假的——不换的话它会一路 return false，而这些用例断言的正是「答了什么」，
- * 换句话说不换就全是恒真的。
- */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { emptyProject } from '@/types/document'
-import type { ProjectDocument, TextObject } from '@/types/document'
+import { literal } from '@/i18n'
+import { canvasToDoc, emptyProject, type ProjectDocument } from '@/types/document'
 import { useDocumentStore } from '@/store/documentStore'
-import { answerCloseRequest, beginCloseRequest } from './closeGuard'
+import { ApiError, saveLayout } from './api'
+import { bindNamedDocumentTarget } from './namedSave'
+import { setCurrentProjectId } from './session'
+import { projectContentKey } from './documentCheckpoint'
+import { forgetLayoutRevisions } from './layoutRevision'
+import { resolveDesktopCloseRequest } from './desktop'
+import { answerLeaveRequest, beginCloseRequest, cancelLeaveRequest, requestLeaveDocument, useLeaveGuard } from './closeGuard'
 
-/** 前端答给壳的每一句都记在这里 */
-const said: string[] = []
-
-vi.mock('@/lib/desktop', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('./desktop')>()),
-  resolveDesktopCloseRequest: (d: string) => {
-    said.push(d)
-    return Promise.resolve(true)
-  },
+vi.mock('@/lib/api', async (original) => ({ ...await original<typeof import('./api')>(), saveLayout: vi.fn() }))
+vi.mock('@/lib/desktop', async (original) => ({
+  ...await original<typeof import('./desktop')>(), resolveDesktopCloseRequest: vi.fn().mockResolvedValue(true),
 }))
-
-const text = (id: string): TextObject => ({
-  id, type: 'text', text: 'x', sizePt: 9, bold: false,
-  color: '#000', align: 'left', x: 0, y: 0, w: 20, h: 8,
-})
-
-const seeded = (): ProjectDocument => {
-  const pd = emptyProject()
-  pd.canvases[0].objects = [text('t0')]
-  pd.updatedAt = 1
-  return pd
-}
-
 const s = () => useDocumentStore.getState()
-const tick = async () => {
-  for (let i = 0; i < 12; i++) await Promise.resolve()
+const save = vi.mocked(saveLayout)
+const said = vi.mocked(resolveDesktopCloseRequest)
+const tick = async () => { for (let i = 0; i < 12; i++) await Promise.resolve() }
+function edit(width: number) { s().commit(literal('width'), (doc) => { doc.page.w = width }) }
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((done) => { resolve = done })
+  return { promise, resolve }
 }
 
-/* 假磁盘：只需要「写得进 / 写不进」两档 */
-let putOk = true
-const puts: string[] = []
-const fakeFetch = (async (url: unknown, init?: RequestInit) => {
-  const raw = String(url)
-  const m = raw.match(/\/api\/autosave\/([^/?]+)/)
-  if (!m) return new Response('{}', { status: 404 })
-  if (init?.method === 'PUT') {
-    puts.push(decodeURIComponent(m[1]))
-    return putOk
-      ? new Response('{"ok":true,"saved_at":1,"revision":"r1"}', { status: 200 })
-      : new Response('{"error":"disk full"}', { status: 500 })
-  }
-  if (init?.method === 'DELETE') return new Response('{"ok":true}', { status: 200 })
-  return new Response('{}', { status: 404 })
-}) as typeof fetch
-
-beforeEach(async () => {
-  globalThis.fetch = fakeFetch
-  said.length = 0
-  puts.length = 0
-  putOk = true
+beforeEach(() => {
+  cancelLeaveRequest()
   localStorage.clear()
-  await s().switchDocument(seeded(), 'd_close')
-  await tick()
-  puts.length = 0
+  forgetLayoutRevisions()
+  setCurrentProjectId('close-project')
+  const pd = emptyProject()
+  useDocumentStore.setState({
+    doc: canvasToDoc(pd.canvases[0]), canvases: pd.canvases,
+    documentId: 'close-document', projectMeta: { ...pd.project, createdAt: pd.createdAt },
+    activeCanvasId: pd.canvases[0].id, openTabs: [pd.canvases[0].id], canvasSessions: {},
+    loadSeq: s().loadSeq + 1, past: [], future: [], txn: null,
+    namedTarget: null, savedCheckpoint: projectContentKey(pd), namedSaveState: 'idle', namedSaveIssue: null,
+    dirty: false, saveState: 'clean', saveIssue: null,
+  })
+  save.mockReset().mockResolvedValue({ ok: true, revision: 'r2' })
+  said.mockClear()
 })
+afterEach(() => { cancelLeaveRequest(); document.body.innerHTML = '' })
 
-afterEach(async () => {
-  await tick()
-  localStorage.clear()
-})
-
-describe('壳问「能关吗」', () => {
-  it.each(['clean', 'saved'] as const)('%s：不弹框，直接答「关」', async (state) => {
-    useDocumentStore.setState({ saveState: state })
+describe('leave checks the named file, not the recovery draft', () => {
+  it('clean closes without a dialog; undo to checkpoint restores that behavior', async () => {
+    bindNamedDocumentTarget({ name: 'paper', revision: 'r1' })
+    edit(123)
+    s().undo()
+    expect(await requestLeaveDocument({ kind: 'document' })).toBe(true)
     expect(await beginCloseRequest()).toBe(false)
-    expect(said).toEqual(['close'])
+    expect(said).toHaveBeenCalledWith('close')
+    expect(useLeaveGuard.getState().request).toBeNull()
   })
-
-  // ADR 0024 的关闭保护正是这四档；与 `beforeunload` 共用 `hasUnsavedWork`，
-  // 两处各写一份判据的结果会是「刷新会拦、关窗不拦」。
-  it.each(['dirty', 'saving', 'save_error', 'conflict'] as const)(
-    '%s：先接手（hold），再让调用方弹三选一',
-    async (state) => {
-      useDocumentStore.setState({ saveState: state })
-      expect(await beginCloseRequest()).toBe(true)
-      expect(said).toEqual(['hold'])
-    },
-  )
-})
-
-describe('三选一的答复', () => {
-  it('取消：窗口留着，壳收到 cancel', async () => {
-    useDocumentStore.setState({ saveState: 'dirty' })
-    expect(await answerCloseRequest('cancel')).toBe('stay')
-    expect(said).toEqual(['cancel'])
-    expect(puts).toEqual([])
+  it('autosave saved still holds a changed named file and cancel stays', async () => {
+    edit(123)
+    useDocumentStore.setState({ saveState: 'saved' })
+    expect(await beginCloseRequest()).toBe(true)
+    expect(said).toHaveBeenCalledWith('hold')
+    await answerLeaveRequest('cancel')
+    await tick()
+    expect(said).toHaveBeenLastCalledWith('cancel')
+    expect(save).not.toHaveBeenCalled()
   })
-
-  it('不保存：直接关，一次磁盘都不碰', async () => {
-    useDocumentStore.setState({ saveState: 'dirty' })
-    expect(await answerCloseRequest('discard')).toBe('closing')
-    expect(said).toEqual(['close'])
-    expect(puts).toEqual([])
+  it('first save requires a name; cancel does not create a file', async () => {
+    edit(123)
+    const leaving = requestLeaveDocument({ kind: 'document' })
+    expect(useLeaveGuard.getState().request?.needsName).toBe(true)
+    expect(await answerLeaveRequest('save', ' ')).toBe('stay')
+    expect(useLeaveGuard.getState().failed).toBe(true)
+    await answerLeaveRequest('cancel')
+    expect(await leaving).toBe(false)
+    expect(save).not.toHaveBeenCalled()
   })
-
-  it('保存：真写进磁盘之后才关', async () => {
-    useDocumentStore.setState({ saveState: 'dirty' })
-    expect(await answerCloseRequest('save')).toBe('closing')
-    expect(puts).toEqual(['d_close'])
-    expect(said).toEqual(['close'])
+  it('saves named content to disk before releasing the native close', async () => {
+    edit(123)
+    await beginCloseRequest()
+    expect(await answerLeaveRequest('save', 'paper')).toBe('closing')
+    await tick()
+    expect(save.mock.lastCall?.slice(2)).toEqual(['absent', 'close-project'])
+    expect((save.mock.calls[0][1] as ProjectDocument).canvases[0].page.w).toBe(123)
+    expect(said).toHaveBeenLastCalledWith('close')
   })
-
-  /**
-   * 这条是整扇闸最要紧的一位：**存不成就不能关**。
-   * 存不成还照关，用户按下的那个「保存」就成了一句谎话——他以为存好了，
-   * 磁盘上留着的是旧的那份，而窗口已经没了。
-   */
-  it('保存失败（写盘 500）：窗口留着，壳收到 cancel', async () => {
-    putOk = false
-    useDocumentStore.setState({ saveState: 'dirty' })
-    expect(await answerCloseRequest('save')).toBe('stay')
-    expect(puts).toEqual(['d_close'])
-    expect(s().saveState).toBe('save_error')
-    expect(said).toEqual(['cancel'])
+  it.each([500, 409])('save HTTP %i stays open for retry/cancel, never overwrites', async (status) => {
+    bindNamedDocumentTarget({ name: 'paper', revision: 'r1' })
+    edit(123)
+    save.mockRejectedValueOnce(new ApiError('failed', status, {}))
+    const leaving = requestLeaveDocument({ kind: 'project' })
+    expect(await answerLeaveRequest('save')).toBe('stay')
+    expect(useLeaveGuard.getState().busy).toBe(false)
+    expect(useLeaveGuard.getState().failed).toBe(true)
+    expect(save.mock.lastCall?.[2]).toBe('r1')
+    await answerLeaveRequest('cancel')
+    expect(await leaving).toBe(false)
   })
-
-  /**
-   * 冲突未决时 `flushAutosave` **根本不往磁盘上写**（磁盘那份已经不是我以为
-   * 的那份）。所以「保存」在这一档是个不可能成功的动作，绝不能因为它「没报错」
-   * 就把窗口关掉。
-   */
-  it('冲突未决时点保存：不写磁盘，也不关窗', async () => {
-    useDocumentStore.setState({ saveState: 'conflict' })
-    expect(await answerCloseRequest('save')).toBe('stay')
-    expect(puts).toEqual([])
-    expect(said).toEqual(['cancel'])
+  it('save receipt for an older edit cannot release a newer edit', async () => {
+    bindNamedDocumentTarget({ name: 'paper', revision: 'r1' })
+    edit(123)
+    const disk = deferred<{ ok: boolean; revision: string }>()
+    save.mockReturnValueOnce(disk.promise)
+    const leaving = requestLeaveDocument({ kind: 'window' })
+    const saving = answerLeaveRequest('save')
+    await tick()
+    edit(124)
+    disk.resolve({ ok: true, revision: 'r2' })
+    expect(await saving).toBe('stay')
+    expect(useLeaveGuard.getState().failed).toBe(true)
+    await answerLeaveRequest('cancel')
+    expect(await leaving).toBe(false)
+  })
+  it('late receipt from a previous document never authorizes leaving the current one', async () => {
+    bindNamedDocumentTarget({ name: 'paper', revision: 'r1' })
+    edit(123)
+    const disk = deferred<{ ok: boolean; revision: string }>()
+    save.mockReturnValueOnce(disk.promise)
+    const leaving = requestLeaveDocument({ kind: 'document' })
+    const saving = answerLeaveRequest('save')
+    await tick()
+    useDocumentStore.setState({ documentId: 'other', loadSeq: s().loadSeq + 1 })
+    disk.resolve({ ok: true, revision: 'r2' })
+    expect(await saving).toBe('stay')
+    expect(await leaving).toBe(false)
+  })
+  it('duplicate close does not replace the question; teardown resolves its promise', async () => {
+    edit(123)
+    const first = requestLeaveDocument({ kind: 'canvas', canvasId: s().activeCanvasId })
+    const request = useLeaveGuard.getState().request
+    expect(await requestLeaveDocument({ kind: 'project' })).toBe(false)
+    expect(useLeaveGuard.getState().request).toBe(request)
+    cancelLeaveRequest()
+    expect(await first).toBe(false)
+  })
+  it('discard continues without a formal save and preserves the canvas data', async () => {
+    edit(123)
+    const leaving = requestLeaveDocument({ kind: 'canvas', canvasId: s().activeCanvasId })
+    expect(await answerLeaveRequest('discard')).toBe('closing')
+    expect(await leaving).toBe(true)
+    expect(save).not.toHaveBeenCalled()
+    expect(s().doc.page.w).toBe(123)
+  })
+  it('pending input is blurred and committed before the close predicate is evaluated', async () => {
+    const input = document.createElement('input')
+    input.addEventListener('blur', () => edit(123))
+    document.body.appendChild(input)
+    input.focus()
+    const leaving = requestLeaveDocument({ kind: 'document' })
+    expect(useLeaveGuard.getState().request).not.toBeNull()
+    expect(s().doc.page.w).toBe(123)
+    await answerLeaveRequest('cancel')
+    expect(await leaving).toBe(false)
   })
 })

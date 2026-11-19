@@ -187,10 +187,10 @@ describe('边界措辞与真实判据同步（审计 T41）', () => {
   })
 
   const floorHit = (spec: PreflightSpec) =>
-    runSpec(spec, loadProfile()).find((i) => i.id === 'font-below-absolute-floor')
+    runSpec(spec, loadProfile('lab-publication-v1')).find((i) => i.id === 'font-below-absolute-floor')
 
   it('绝对下限的等号边界：求值器判「正好等于」违规，措辞就得这么说', () => {
-    const floor = loadProfile().absolute_min_font_size_pt
+    const floor = loadProfile('lab-publication-v1').absolute_min_font_size_pt
     // 判据这一侧：正好等于不通过，高一点点就通过（第二句让第一句不会恒真）
     expect(floorHit(specWithText(floor))?.id).toBe('font-below-absolute-floor')
     expect(floorHit(specWithText(floor + 0.01))).toBeUndefined()
@@ -212,7 +212,7 @@ describe('边界措辞与真实判据同步（审计 T41）', () => {
 
   it('7.995pt 被显示成 8.00：同一句话也要成立（这一档的真值并不等于下限）', () => {
     // 图内文字的 `effective` 走 toFixed(2)，7.995×1 显示成 8.00
-    const hit = runSpec(specWithPanelText(7.995, 1), loadProfile()).find(
+    const hit = runSpec(specWithPanelText(7.995, 1), loadProfile('lab-publication-v1')).find(
       (i) => i.id === 'font-below-absolute-floor',
     )!
     expect(hit.message.values?.effective).toBe('8.00')

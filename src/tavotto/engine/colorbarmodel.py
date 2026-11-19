@@ -15,6 +15,8 @@ matplotlib + 更早切出的族（`axestraversal` / `tickmodel`）：不 import 
 
 from __future__ import annotations
 
+import math
+import re
 from typing import Protocol
 
 import tickmodel
@@ -221,12 +223,74 @@ def scale_gids(state: FollowState, mappable) -> list[str]:
     return [el["gid"] for el in state.elements if el["artist"] in sibs]
 
 
+def custom_colormap_spec(cmap) -> dict | None:
+    """Return an independent, JSON-safe copy of an editor-created palette."""
+    spec = getattr(cmap, "_batfig_cmap_spec", None)
+    if spec is None:
+        return None
+    return {
+        "type": "custom",
+        "colors": list(spec["colors"]),
+        "positions": list(spec["positions"]),
+    }
+
+
+def resolve_colormap(value):
+    """Decode a persisted DIY map before touching any mappable or colorbar.
+
+    Names and original Colormap objects retain Matplotlib's existing behavior.
+    DIY maps are local objects, never global registrations: another figure or a
+    cold worker can reproduce them solely from the saved color stops.
+    """
+    if not isinstance(value, dict):
+        return value
+    if value.get("type") != "custom" or set(value) - {"type", "colors", "positions"}:
+        raise ValueError("自定义色图格式错误：需要 type、colors 和可选 positions")
+    colors = value.get("colors")
+    if not isinstance(colors, list) or not 3 <= len(colors) <= 32:
+        raise ValueError("自定义色图需要 3 至 32 个颜色点")
+    if any(not isinstance(c, str) or not re.fullmatch(r"#[0-9a-fA-F]{6}", c) for c in colors):
+        raise ValueError("自定义色图颜色必须为 #RRGGBB")
+    positions = value.get("positions", [i / (len(colors) - 1) for i in range(len(colors))])
+    if not isinstance(positions, list) or len(positions) != len(colors):
+        raise ValueError("自定义色图颜色与位置数量必须相同")
+    if any(
+        isinstance(p, bool) or not isinstance(p, (int, float)) or not math.isfinite(p)
+        for p in positions
+    ):
+        raise ValueError("自定义色图位置必须为有限数值")
+    if (
+        positions[0] != 0
+        or positions[-1] != 1
+        or any(a >= b for a, b in zip(positions, positions[1:]))
+    ):
+        raise ValueError("自定义色图位置必须从 0 到 1 严格递增")
+
+    from matplotlib.colors import LinearSegmentedColormap
+
+    spec = {
+        "type": "custom",
+        "colors": [c.lower() for c in colors],
+        "positions": [float(p) for p in positions],
+    }
+    cmap = LinearSegmentedColormap.from_list(
+        "batfig_custom", list(zip(spec["positions"], spec["colors"])), N=256
+    )
+    cmap._batfig_cmap_spec = spec  # noqa: SLF001 — local persisted palette metadata
+    return cmap
+
+
+def set_mappable_cmap(mappable, value) -> None:
+    mappable.set_cmap(resolve_colormap(value))
+
+
 def _set_cb_cmap(p: "ColorbarProxy", v, state: FollowState) -> None:
     """色条的色图写到它的 mappable **和全部色阶兄弟**上（见 `scale_siblings`）。"""
     m = p.cb.mappable
-    m.set_cmap(v)
+    cmap = resolve_colormap(v)
+    m.set_cmap(cmap)
     for sib in scale_siblings(state, m):
-        sib.set_cmap(v)
+        sib.set_cmap(cmap)
 
 
 _set_cb_cmap._needs_state = True  # noqa: SLF001

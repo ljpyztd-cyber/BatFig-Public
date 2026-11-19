@@ -73,6 +73,7 @@ import {
   type SwitchKind,
 } from '@/lib/shapeSwitch'
 import { useArrangeStore } from '@/store/arrangeStore'
+import { useCanvasAlignment } from '@/store/canvasAlignment'
 import { useAssetStore } from '@/store/assetStore'
 import { useDocumentStore } from '@/store/documentStore'
 import { useProjectReadinessStore } from '@/store/projectReadinessStore'
@@ -348,6 +349,8 @@ function MultiItems({
   run: (fn: () => void) => () => void
 }) {
   const ref = useArrangeStore((s) => s.alignRef)
+  const basis = useArrangeStore((s) => s.alignBasis)
+  const setBasis = useArrangeStore((s) => s.setAlignBasis)
   const count = selected.length
   const grouped = selectionHasGroupIn(selected)
   // 选区恰好是**一整个组**：再「成组」一次只会换个组 id、多一条历史，没有意义；
@@ -358,6 +361,11 @@ function MultiItems({
     <>
       <MenuSub label={qe('arrange')} data-quick-item="arrange">
         <MenuHeading data-quick-arrange-ref={ref}>{qe('arrangeRef', { ref: alignRefLabel(ref) })}</MenuHeading>
+        <MenuRadioGroup value={basis} onValueChange={(value) => setBasis(value as 'axes' | 'image')}>
+          <MenuRadioItem value="axes" data-align-basis="axes">{ins('arrange.basisAxes')}</MenuRadioItem>
+          <MenuRadioItem value="image" data-align-basis="image">{ins('arrange.basisImage')}</MenuRadioItem>
+        </MenuRadioGroup>
+        <MenuSeparator />
         <AlignItems buttons={ALIGN_BUTTONS} count={count} run={run} refName={ref} />
         <MenuSeparator />
         <AlignItems buttons={DISTRIBUTE_BUTTONS} count={count} run={run} refName={ref} />
@@ -443,10 +451,12 @@ function AlignItems({
   refName: 'selection' | 'page' | 'primary'
   run: (fn: () => void) => () => void
 }) {
+  const pending = useCanvasAlignment().pending
   return (
     <>
       {buttons.map(({ mode, icon, min }) => {
-        const blocked = count < min
+        const syncing = pending && mode !== 'samew' && mode !== 'sameh'
+        const blocked = count < min || syncing
         return (
           <MenuItem
             key={mode}
@@ -454,7 +464,7 @@ function AlignItems({
             data-quick-item={`align-${mode}`}
             data-align-mode={mode}
             disabled={blocked}
-            reason={blocked ? qe('needObjects', { count: min }) : undefined}
+            reason={syncing ? ins('arrange.axesSyncing') : blocked ? qe('needObjects', { count: min }) : undefined}
             onSelect={run(() => alignSelectedTo(mode, refName))}
           >
             {alignModeLabel(mode)}

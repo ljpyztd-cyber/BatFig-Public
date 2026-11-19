@@ -12,7 +12,18 @@
   },
   "colorField": {
     "picker": "{{label}}：取色盘",
-    "none": "无"
+    "none": "无",
+    "presets": "常用颜色与配色组合",
+    "common": "常用颜色",
+    "customHint": "点色块自定义取色，结束取色后应用。"
+  },
+  "colorPalettes": {
+    "classic": "经典配色",
+    "contrast": "高辨识配色",
+    "muted": "柔和配色",
+    "blueWhiteRed": "蓝—白—红",
+    "blueGold": "蓝—灰—金",
+    "purpleGreen": "紫—白—绿"
   },
   "count": {
     "selectedObjects_other": "已选 {{count}} 个对象"

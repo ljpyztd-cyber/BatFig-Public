@@ -131,7 +131,7 @@ export function alignSelectedPanelElements(panelId: string, mode: AlignMode): Al
 
   // 5. 重算条目
   const items: MixedEntry[] = [
-    ...alignEntries(panel, manifest, gids),
+    ...alignEntries(panel, manifest, gids, { excludeColorbars: true }),
     ...annotationAlignEntries(panel, annotations),
   ]
   if (items.length < 2) return blocked(panelId, mode, 'too-few')

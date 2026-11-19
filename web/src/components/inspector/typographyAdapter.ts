@@ -8,6 +8,7 @@ import { usePanelDisplayManifest } from '@/store/renderStore'
 import { getHistoryMode } from '@/store/svgPreviewStore'
 import {
   canvasFieldOf,
+  EXACT_TEXT_FAMILIES,
   coerceTypography,
   commonSupport,
   effectiveCanvasFamily,
@@ -29,6 +30,10 @@ import type { PanelObject, TextObject } from '@/types/document'
 import { GESTURE_QUIET_MS } from './elementWrite'
 import { useTextStyleAdapter } from './textStyleAdapter'
 import type { OverrideState } from './textStyleModel'
+import { useCanvasFontRuntime } from '@/lib/canvasFontRuntime'
+import { resolveDocumentSpec } from '@/lib/specBinding'
+import { useProfileStore } from '@/store/profileStore'
+import { canvasTextDefaults } from '@/lib/typography'
 
 /**
  * 排版控件的**唯一数据接口**（ADR 0032）。
@@ -56,6 +61,8 @@ export interface TypographyAdapter {
   writeOnce: (prop: TypographyProp, value: unknown) => void
   beginGesture: () => void
   endGesture: () => void
+  previewColor?: (value: string | null) => void
+  colorScope?: string
   /** 已修改状态：没有 / 部分 / 全部（画布文字只有 none/all——它没有「脚本值」） */
   overrideStateOf: (prop: TypographyProp) => OverrideState
   reset: (prop: TypographyProp) => void
@@ -186,6 +193,8 @@ export function useFigureTypography(
     },
     beginGesture: inner.beginGesture,
     endGesture: inner.endGesture,
+    previewColor: inner.previewColor,
+    colorScope: `${panel.id}:${elements.map((element) => element.gid).join('|')}`,
     overrideStateOf: (prop) => {
       const m = mp(prop)
       return m ? inner.overrideStateOf(m) : 'none'
@@ -301,6 +310,7 @@ const CANVAS_HISTORY: Record<TypographyProp, string> = {
  * 「写一个默认值进去」——后者会把 inherit 悄悄变成一次显式设置。
  */
 export function useCanvasTypography(objs: TextObject[]): TypographyAdapter {
+  const fonts = useCanvasFontRuntime()
   const gesture = useObjectGesture()
   const ids = useMemo(() => objs.map((o) => o.id), [objs])
   const count = objs.length
@@ -343,6 +353,7 @@ export function useCanvasTypography(objs: TextObject[]): TypographyAdapter {
 
   return {
     count,
+    colorScope: ids.join('|'),
     kinds: ['canvasText'],
     fieldOf: (prop) => {
       if (!supported.has(prop)) return undefined
@@ -375,11 +386,17 @@ export function useCanvasTypography(objs: TextObject[]): TypographyAdapter {
     reset: (prop) => {
       if (!CANVAS_INHERITABLE.has(prop)) return
       gesture.end()
+      const defaults = canvasTextDefaults(resolveDocumentSpec(
+        useDocumentStore.getState().doc.profile, useProfileStore.getState().catalog(),
+      ).profile)
       updateObjects(ids, hist('resetTextProp'), (o) => {
         if (o.type !== 'text') return
-        // 「恢复」= 删掉这个字段回到继承。写一个等于默认值的显式值会让
-        // 「没设过」变成「设过、正好一样」——下一次默认值改了它就不跟了。
-        if (prop === 'fontFamily') delete o.fontFamily
+        // BatFig's creation default is explicit Arial; old profiles still delete
+        // the field to restore their original inherited generic family.
+        if (prop === 'fontFamily') {
+          if (defaults.fontFamily) writeCanvasText(o, prop, defaults.fontFamily)
+          else delete o.fontFamily
+        }
         else if (prop === 'style') delete o.italic
         else if (prop === 'lineHeight') delete o.lineHeight
         else if (prop === 'rotationDeg') delete o.rotationDeg
@@ -392,6 +409,11 @@ export function useCanvasTypography(objs: TextObject[]): TypographyAdapter {
         : supportsTypography('canvasText', prop)
           ? 'not_in_manifest'
           : 'kind_unsupported',
-    unavailableOptions: () => EMPTY,
+    unavailableOptions: (prop) => prop === 'fontFamily' ? EXACT_TEXT_FAMILIES.filter((family) => {
+      const status = fonts[family]
+      return !status?.available || objs.some((o) =>
+        !status.faces.some((face) => face.bold === o.bold && face.italic === (o.italic === true)),
+      )
+    }) : EMPTY,
   }
 }

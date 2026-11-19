@@ -64,7 +64,9 @@ CASES: list[tuple[str, str]] = [
 ]
 
 #: 三个族各跑一遍：族只换拉丁脸，不换覆盖判据——**这条是承诺，要被看住**。
-FAMILIES = list(pdfbackend.CANVAS_TEXT_FAMILIES)
+# Local licensed fonts have runtime per-face coverage; never record one machine's font
+# coverage as a portable golden oracle for another machine.
+FAMILIES = list(pdfbackend.CANVAS_TEXT_FAMILIES[:3])
 
 
 def _force_utf8() -> None:

@@ -3,6 +3,15 @@
 > 原文出自 `web/AGENTS.md`「命中与选择几何」（2026-09-17 指导文档治理时迁出，正文逐字未改）。
 > 这里是这一主题规则的**唯一全文**；`web/AGENTS.md` 只留速查行。改规则改这里，并同步那一行。
 
+## BatFig 加选手势（2026-10-22）
+
+画布对象、图内元素、两棵树与框选使用 `lib/selectionModifiers.isAdditiveSelection`
+统一识别 Ctrl / Command / Shift。点击已选成员减选，未选成员加选；允许同类批量编辑，
+也保留混排和成组选择。加选优先于图内边框的刻度修改与 Alt 轮换，修饰键双击不进入文字编辑。
+树行加选阻止随后原生 focus 覆盖选区。选择本身不写文档、不进撤销；拖动过程中的
+Ctrl 临时关闭吸附／仅拖自身保持原行为（先起拖，再按 Ctrl）。
+看护：`canvas/ctrlSelection.test.tsx`、`canvas/twinAxesPick.test.tsx`。
+
 - 图内元素的命中 / 框选 / 描边全在 `web/src/lib/pathGeom.ts`（距离一律换到 mm
   再比，与图内箭头同一口径；填充按 nonzero 缠绕数算内部——判据的完整理由见
   `docs/rules/backend/pdf-backend-boundary.md`，别在别处另写一份 even-odd 的；

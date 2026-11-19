@@ -7,13 +7,16 @@
  * 教程项目。动作全部走生产 action（enterElementEdit / setOverride / focusObject /
  * alignSelectedTo …），不手写 store 状态去「模拟完成」。
  */
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+vi.mock('@/lib/closeGuard', () => ({ requestLeaveDocument: vi.fn(async () => true) }))
 import { literal } from '@/i18n'
 import { emitActivity } from '@/lib/activity'
 import type { Manifest, TutorialMetadata } from '@/lib/api'
 import { focusObject } from '@/lib/issueFocus'
 import { seedExactRender } from '@/test/renderFixtures'
 import { alignSelectedTo, enterElementEdit, setOverride } from '@/store/actions'
+import { useArrangeStore } from '@/store/arrangeStore'
 import { useAssetStore } from '@/store/assetStore'
 import { useDocumentStore } from '@/store/documentStore'
 import { configureOnboardingPersistence, useOnboardingStore } from '@/store/onboardingStore'
@@ -135,6 +138,7 @@ const tick = () => new Promise<void>((r) => setTimeout(r, 0))
 let stopEngine: (() => void) | null = null
 
 async function setupTutorial() {
+  useArrangeStore.getState().setAlignBasis('axes')
   configureOnboardingPersistence(null)
   useOnboardingStore.getState().resetOnboarding()
   resetSignalsForTest()
@@ -366,6 +370,9 @@ describe('完整流程：每一步都由真实动作完成', () => {
     expect(useWorkspaceStore.getState().mode).toBe('layout')
     expect(ob().currentStep).toBe('multi_select_align')
 
+    // 这里只判真实对齐动作发出的教程信号；第一张图没有精确几何，显式选图片边界。
+    // 坐标轴准备 / 等待行为由 canvasAlignment.test.ts 单独覆盖。
+    useArrangeStore.getState().setAlignBasis('image')
     // 只选一张对齐不算；两张教程图 + 对齐 → 完成
     useSelectionStore.getState().set(['p1'])
     alignSelectedTo('top', 'page')

@@ -44,7 +44,7 @@ from flask import (
     send_from_directory,
 )
 from flask.json.provider import DefaultJSONProvider
-from werkzeug.exceptions import HTTPException
+from werkzeug.exceptions import HTTPException, RequestEntityTooLarge
 
 from . import pdfbackend, tiffprobe
 from .engine import (
@@ -54,6 +54,7 @@ from .engine import (
     artifactinspect as engine_artifactinspect,
     atomicio as engine_atomicio,
     bakedbaseline as engine_baked,
+    batfigcsv as engine_batfigcsv,
     bootstrap as engine_bootstrap,
     brand as engine_brand,
     cli as engine_cli,
@@ -156,6 +157,24 @@ from . import (  # noqa: E402 —— 必须在 app 实例创建之后
 )
 
 security.install(app)
+
+
+@app.before_request
+def _lease_request_workers():
+    # Register after authentication. A lease spans session acquisition, build,
+    # override/export and response materialization, including protocol idle gaps.
+    scope = engine_pool.worker_scope()
+    scope.__enter__()
+    request.environ["tavotto.worker_scope"] = scope
+
+
+@app.teardown_request
+def _release_request_workers(_exc):
+    # Pop makes repeated teardown (including test-client preserved contexts) safe.
+    scope = request.environ.pop("tavotto.worker_scope", None)
+    if scope is not None:
+        scope.__exit__(None, None, None)
+
 
 # 打开着的项目：id → ProjectCtx。**一个进程可以同时端着多个项目**——
 # 不同浏览器标签页各开各的图库（标签页把自己的 pj 带在请求上，见
@@ -356,7 +375,8 @@ def bound_project(ctx: "ProjectCtx"):
     previous = getattr(_BOUND_CTX, "ctx", None)
     _BOUND_CTX.ctx = ctx
     try:
-        yield ctx
+        with engine_pool.worker_scope():
+            yield ctx
     finally:
         _BOUND_CTX.ctx = previous
 
@@ -815,6 +835,85 @@ def api_version():
     resp = jsonify({"build": build, "version": engine_updater.current_version()})
     resp.headers["Cache-Control"] = "no-store"
     return resp
+
+
+@app.get("/api/canvas/fonts")
+def api_canvas_fonts():
+    """Local font facts, never font programs or system paths."""
+    return jsonify(
+        {
+            family: pdfbackend.canvas_font_status(family)
+            for family in pdfbackend.CANVAS_TEXT_FAMILIES
+            if family not in ("serif", "sans-serif", "monospace")
+        }
+    )
+
+
+@app.errorhandler(pdfbackend.CanvasTextError)
+def _canvas_text_error(exc):
+    return jsonify({"error": str(exc), "code": exc.code, "params": exc.params}), 422
+
+
+@app.post("/api/canvas/text-preview")
+def api_canvas_text_preview():
+    """Preview the same shaped local-font runs used by vector export."""
+    body = request.get_json(force=True)
+    obj = body.get("object") if isinstance(body, dict) else None
+    if not isinstance(obj, dict):
+        raise pdfbackend.CanvasTextError("text_preview_invalid", "A text object is required", {})
+    return jsonify(pdfbackend.canvas_text_preview(obj))
+
+
+def _batfig_csv_upload():
+    # Bound the entire multipart stream before parsing/spooling any uploaded file.
+    # The extra 64 KiB covers the filename, mapping and multipart headers.
+    request.max_content_length = engine_batfigcsv.MAX_BYTES + 64 * 1024
+    # Multipart decoding retains a partial boundary beside its 64 KiB read block.
+    # Leave room for both so ordinary multi-megabyte file parts can stream.
+    request.max_form_memory_size = 128 * 1024
+    request.max_form_parts = 4
+    try:
+        uploaded = request.files.get("file")
+    except RequestEntityTooLarge as exc:
+        raise engine_batfigcsv.BatfigCSVError(
+            "csv_too_large", "CSV upload exceeds the 5 MiB file or form limits"
+        ) from exc
+    if uploaded is None:
+        raise engine_batfigcsv.BatfigCSVError("csv_invalid", "A UTF-8 CSV file is required")
+    raw = uploaded.stream.read(engine_batfigcsv.MAX_BYTES + 1)
+    return uploaded.filename or "source.csv", raw
+
+
+@app.errorhandler(engine_batfigcsv.BatfigCSVError)
+def _batfig_csv_error(exc):
+    return jsonify({"error": str(exc), "code": exc.code, "params": {"detail": str(exc)}}), 422
+
+
+@app.post("/api/batfig/csv/inspect")
+def api_batfig_csv_inspect():
+    current_ctx()  # Same project/auth boundary as import; no disk mutation.
+    _, raw = _batfig_csv_upload()
+    return jsonify(engine_batfigcsv.inspect_csv(raw))
+
+
+@app.post("/api/batfig/csv/import")
+def api_batfig_csv_import():
+    """Persist original data and spec; execution uses the existing safe worker."""
+    ctx = current_ctx()
+    filename, raw = _batfig_csv_upload()
+    try:
+        mapping = json.loads(request.form.get("mapping", "{}"))
+    except (TypeError, ValueError) as exc:
+        raise engine_batfigcsv.BatfigCSVError("csv_invalid", "Invalid column mapping") from exc
+    target = engine_projectenv.contained_path(ctx.path, ctx.path / "batfig-imports")
+    if target is None:
+        raise engine_batfigcsv.BatfigCSVError("csv_invalid", "Import directory leaves project")
+    Path(target).mkdir(parents=True, exist_ok=True)
+    result = engine_batfigcsv.create_bundle(Path(target), raw, filename, mapping)
+    for key in ("directory", "script", "spec", "data"):
+        result[key] = Path(result[key]).relative_to(ctx.path).as_posix()
+    refresh_project(ctx, reason="csv-import", allow_static_merge=False)
+    return jsonify(result), 201
 
 
 @app.get("/api/panels")

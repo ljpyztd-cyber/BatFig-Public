@@ -12,8 +12,10 @@ from __future__ import annotations
 
 import contextlib
 import hashlib
+import logging
 import os
 import sys
+import warnings
 import weakref
 
 import matplotlib as mpl
@@ -42,6 +44,7 @@ import spinemodel
 import tickmodel
 from axestraversal import ordered_axes
 from colorbarmodel import ColorbarProxy
+from fontpolicy import LOCAL_FONT_FAMILIES, strict_family
 from tickmodel import TickLabel, TickSet
 
 
@@ -597,7 +600,205 @@ def _family_chain(fam) -> list[str]:
     manifest 与预检报的都是它；尾巴只在正文那张脸缺字形时逐字形接手。
     """
     head = [str(f) for f in fam] if isinstance(fam, (list, tuple)) else [str(fam)]
+    # Arial is an explicit BatFig requirement. A glyph from a fallback face is
+    # not Arial, even when get_fontfamily()[0] still claims it is.
+    if head and strict_family(head[0]):
+        return [head[0]]
     return head + [f for f in fallback_tail() if f not in head]
+
+
+def _strict_text_family(text: Text) -> str | None:
+    family = text.get_fontfamily()
+    return strict_family(str(family[0])) if family else None
+
+
+def _validate_local_face_identity(face, family: str) -> None:
+    """Verify the actual font program, including MathText's selected glyph face."""
+    spec = LOCAL_FONT_FAMILIES[family]
+
+    def fail(reason: str, message: str):
+        raise ValueError(f"{spec.error_prefix}_{reason}: {family}: {message}")
+
+    if face.family_name.casefold() != family.casefold():
+        fail("substituted", "Resolved font has a different family; rendering was blocked.")
+    flags = getattr(face.style_flags, "value", face.style_flags)
+    expected = next(
+        ps
+        for _file, ps, bold, italic in spec.faces
+        if (bold, italic) == (bool(flags & 2), bool(flags & 1))
+    )
+    if face.postscript_name != expected:
+        fail("invalid", "The resolved PostScript identity does not match the requested face.")
+    os2 = face.get_sfnt_table("OS/2")
+    if os2 is None or os2.get("fsType", 0) & (0x0002 | 0x0100 | 0x0200):
+        fail("embedding_restricted", "The font does not allow the required PDF subsetting.")
+
+
+def _validate_local_font_face(properties, family: str, faces: dict):
+    """Resolve one requested style and reject nearest-style fallback within a family."""
+    from matplotlib import font_manager, ft2font
+
+    spec = LOCAL_FONT_FAMILIES[family]
+    try:
+        path = font_manager.findfont(properties, fallback_to_default=False)
+    except (ValueError, RuntimeError) as exc:
+        raise ValueError(
+            f"{spec.error_prefix}_missing: Install licensed {family}; font substitution is disabled."
+        ) from exc
+    if path not in faces:
+        faces[path] = ft2font.FT2Font(path)
+    face = faces[path]
+    _validate_local_face_identity(face, family)
+    weight = properties.get_weight()
+    weight = font_manager.weight_dict.get(weight, 400) if isinstance(weight, str) else weight
+    flags = getattr(face.style_flags, "value", face.style_flags)
+    if bool(flags & 2) != (weight >= 600) or bool(flags & 1) != (
+        properties.get_style() in ("italic", "oblique")
+    ):
+        raise ValueError(
+            f"{spec.error_prefix}_missing_face: {family}: The requested weight/style face is unavailable."
+        )
+    return face
+
+
+def _validate_local_font_text(text: Text, parser, faces: dict) -> None:
+    """Check this worker's actual face/glyphs, not the requested family string."""
+    family = _strict_text_family(text)
+    if not text.get_visible() or not text.get_text() or family is None:
+        return
+    spec = LOCAL_FONT_FAMILIES[family]
+
+    def fail(reason: str, message: str):
+        raise ValueError(f"{spec.error_prefix}_{reason}: {family}: {message}")
+
+    if text.get_usetex():
+        fail("unsupported_tex", "Strict font validation does not support external TeX.")
+    properties = text.get_fontproperties()
+    face = _validate_local_font_face(properties, family, faces)
+    value, ismath = text._preprocess_math(text.get_text())
+    if ismath:
+        parsed = parser.parse(value, dpi=72, prop=properties)
+        # Matplotlib 3.11 adds a glyph-index field after the codepoint; the
+        # first three fields retain their meaning on supported 3.8–3.11.
+        for glyph in parsed.glyphs:
+            glyph_face, _size, codepoint = glyph[:3]
+            _validate_local_face_identity(glyph_face, family)
+            if not glyph_face.get_char_index(codepoint):
+                fail("missing_glyph", f"Missing U+{codepoint:04X}.")
+    else:
+        missing = sorted(
+            {
+                ord(char)
+                for char in value
+                if char not in "\n\r\t" and not face.get_char_index(ord(char))
+            }
+        )
+        if missing:
+            codes = ", ".join(f"U+{code:04X}" for code in missing)
+            fail("missing_glyph", f"Missing {codes}; substitution is disabled.")
+
+
+@contextlib.contextmanager
+def local_font_render_context(fig):
+    """Block named-font substitution for preview/export, leaving legacy fonts unchanged.
+
+    MathText uses the requested family's verified four styles without fallback.
+    Different custom MathText families cannot share Matplotlib's global custom
+    set, so that case fails instead of silently changing a requested font.
+    """
+    from matplotlib.font_manager import FontProperties
+    from matplotlib.mathtext import MathTextParser
+
+    texts = fig.findobj(Text)
+    strict = [text for text in texts if _strict_text_family(text)]
+    if not strict:
+        yield
+        return
+    math_families = {
+        _strict_text_family(text)
+        for text in strict
+        if text.get_visible() and text._preprocess_math(text.get_text())[1]
+    }
+    if len(math_families) > 1:
+        raise ValueError(
+            "local_font_mixed_mathtext: A figure cannot mix Arial and Times New Roman custom MathText; no font was substituted."
+        )
+    math_family = next(iter(math_families), None)
+    has_math = math_family is not None
+    if has_math and any(
+        not _strict_text_family(text)
+        and text.get_visible()
+        and text.get_math_fontfamily() == "custom"
+        and text._preprocess_math(text.get_text())[1]
+        for text in texts
+    ):
+        prefix = LOCAL_FONT_FAMILIES[math_family].error_prefix
+        raise ValueError(
+            f"{prefix}_mixed_mathtext: Mixed custom MathText families are unsupported."
+        )
+    rc = {}
+    if has_math:
+        rc.update(
+            {
+                "mathtext.fontset": "custom",
+                "mathtext.fallback": None,
+                "mathtext.rm": math_family,
+                "mathtext.it": f"{math_family}:italic",
+                "mathtext.bf": f"{math_family}:bold",
+                "mathtext.bfit": f"{math_family}:italic:bold",
+                "mathtext.sf": math_family,
+                "mathtext.tt": math_family,
+                "mathtext.cal": math_family,
+            }
+        )
+    originals = [(text, text.get_math_fontfamily()) for text in strict]
+    parser = MathTextParser("path")
+    faces: dict = {}
+    if math_family:
+        # A normal outer Text may contain \mathbf / \mathit. Check the styles
+        # independently, before MathText can silently choose a nearest face.
+        for _filename, _postscript, bold, italic in LOCAL_FONT_FAMILIES[math_family].faces:
+            _validate_local_font_face(
+                FontProperties(
+                    family=[math_family],
+                    weight="bold" if bold else "normal",
+                    style="italic" if italic else "normal",
+                ),
+                math_family,
+                faces,
+            )
+
+    class MissingMathGlyph(logging.Handler):
+        def emit(self, record):
+            message = record.getMessage()
+            if "does not have a glyph" in message or "Substituting symbol" in message:
+                prefix = (
+                    LOCAL_FONT_FAMILIES[math_family].error_prefix if math_family else "local_font"
+                )
+                raise ValueError(f"{prefix}_missing_glyph: {message}")
+
+    logger = logging.getLogger("matplotlib._mathtext")
+    handler = MissingMathGlyph()
+    try:
+        with mpl.rc_context(rc), warnings.catch_warnings():
+            warnings.filterwarnings(
+                "error", message="Glyph .* missing from font.*(Arial|Times New Roman)"
+            )
+            if has_math:
+                for text in strict:
+                    text.set_math_fontfamily("custom")
+            logger.addHandler(handler)
+            for text in strict:
+                _validate_local_font_text(text, parser, faces)
+            yield
+            # A draw can create tick labels/offset text. Validate those actual
+            # newly materialized values too, before returning a success result.
+            for text in fig.findobj(Text):
+                _validate_local_font_text(text, parser, faces)
+    finally:
+        logger.removeHandler(handler)
+        for text, original in originals:
+            text.set_math_fontfamily(original)
 
 
 def ensure_text_fallback(t: Text) -> bool:
@@ -2432,7 +2633,7 @@ _CAP_HATCH = (
 )
 #: 颜色映射（ScalarMappable / ColorizingArtist）：Collection 与 AxesImage 共享。
 #: 原生值存 Colormap 对象本身，`set_cmap` 两种都吃。
-_CAP_CMAP = (lambda a: a.get_cmap(), lambda a, v: a.set_cmap(v))
+_CAP_CMAP = (lambda a: a.get_cmap(), colorbarmodel.set_mappable_cmap)
 _CAP_VMIN = (
     lambda a: a.get_clim()[0],
     lambda a, v: a.set_clim(vmin=(None if v is None else float(v))),
@@ -2876,6 +3077,30 @@ def _restore_image_gradient(im, orig) -> None:
         del im._mm_gradient_orig
 
 
+def axes_background_visibility(fig) -> tuple:
+    """Snapshot only 2D axes backgrounds, including inset and colorbar axes.
+
+    Patch visibility is independent from its fill color and from the axes/data
+    visibility. Keep each original flag so undo can restore mixed backgrounds.
+    """
+    return tuple(
+        (ax.patch, ax.patch.get_visible())
+        for ax in ordered_axes(fig)[0]
+        if getattr(ax, "name", "") != "3d"
+    )
+
+
+def _set_axes_transparent(fig, value) -> None:
+    if isinstance(value, tuple):  # original snapshot; never serialized into a patch
+        for patch, visible in value:
+            patch.set_visible(visible)
+    elif isinstance(value, bool):
+        for patch, _ in axes_background_visibility(fig):
+            patch.set_visible(not value)
+    else:
+        raise ValueError("透明坐标区背景必须为布尔值")
+
+
 HANDLERS: dict[tuple[str, str], tuple] = {
     ("text", "text"): (lambda a: a.get_text(), lambda a, v: a.set_text(str(v))),
     ("text", "fontsize"): (lambda a: a.get_fontsize(), lambda a, v: a.set_fontsize(float(v))),
@@ -2993,6 +3218,7 @@ HANDLERS: dict[tuple[str, str], tuple] = {
         lambda f: not f.patch.get_visible(),
         lambda f, v: f.patch.set_visible(not bool(v)),
     ),
+    ("figure", "axes_transparent"): (axes_background_visibility, _set_axes_transparent),
     # ---- axes: 比例 / 反转 / 缩放 / 网格 / spine / 底色 ----
     ("axes", "xscale"): (lambda a: a.get_xscale(), _mk_set_scale("x")),
     ("axes", "yscale"): (lambda a: a.get_yscale(), _mk_set_scale("y")),
@@ -3053,7 +3279,7 @@ HANDLERS: dict[tuple[str, str], tuple] = {
         "head", lambda p, v: p.set_mutation_scale(float(v))
     ),
     # ---- image: 颜色映射 / 显示 ----
-    ("image", "cmap"): (lambda a: a.get_cmap(), lambda a, v: a.set_cmap(v)),
+    ("image", "cmap"): _CAP_CMAP,
     ("image", "vmin"): (
         lambda a: a.get_clim()[0],
         lambda a, v: a.set_clim(vmin=(None if v is None else float(v))),

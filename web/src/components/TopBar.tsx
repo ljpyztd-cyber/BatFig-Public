@@ -6,8 +6,10 @@ import {
   Circle,
   Download,
   Maximize2,
+  LayoutGrid,
   Ellipsis,
   Redo2,
+  Save,
   Slash,
   Square,
   Shapes,
@@ -22,14 +24,16 @@ import {
   newBlankDocument,
   openLayoutDocument,
   openRecentDocument,
+  runManualSave,
   setDocumentName,
 } from '@/store/actions'
 import { requestRelinkMissing } from '@/lib/clipboard'
-import { runUndoRedo } from '@/hooks/useKeyboard'
+import { runUndoRedo, undoRedoBlocked } from '@/hooks/useKeyboard'
 import { createPackage, openPackage } from '@/lib/api'
 import { PRODUCT_NAME } from '@/lib/brand'
 import { foreignProjectLabel } from '@/lib/projectLabel'
 import { currentProjectId } from '@/lib/session'
+import { getDocumentSaveStatus } from '@/lib/namedSave'
 import { insertShape } from '@/lib/presets'
 import { PresetsDialog } from './PresetsDialog'
 import { ProjectSwitcher } from './ProjectSwitcher'
@@ -40,6 +44,7 @@ import { refreshProjectNow } from '@/store/liveSync'
 import { useProjectReadinessStore } from '@/store/projectReadinessStore'
 import { discardLocalCopy, recoverLocalCopy, useDocumentStore } from '@/store/documentStore'
 import { useOnboardingStore } from '@/store/onboardingStore'
+import { useInteractionStore } from '@/store/interactionStore'
 import { useUiStore } from '@/store/uiStore'
 import { useWorkspaceStore } from '@/store/workspace'
 import { useUpdateStore } from '@/store/updateStore'
@@ -50,7 +55,7 @@ import { Button } from './ui/Button'
 import { Menu, MenuItem, MenuLabel, MenuRadioGroup, MenuRadioItem, MenuSeparator } from './ui/Menu'
 import { TextInput } from './ui/Input'
 import { Tip } from './ui/Tooltip'
-import { MOD, cn } from '@/lib/utils'
+import { MOD, cn, combo, isMac } from '@/lib/utils'
 import { msg } from '@/i18n'
 import { formatTime } from '@/i18n/format'
 import { useFormatMessage } from '@/i18n/react'
@@ -90,31 +95,44 @@ const ZOOM_PRESETS = [0.5, 0.75, 1, 1.5, 2, 4]
 export function TopBar() {
   const fastEdit = useWorkspaceStore((s) => s.mode === 'fast_edit')
   return (
-    <header className="flex h-11 shrink-0 items-center justify-between gap-3 bg-surface px-3">
-      <div className="flex min-w-0 flex-1 items-center gap-1.5">
-        <Brand />
-        {/* 项目（图库目录）→ 文档（画布）：从大到小，与对象层级一致 */}
-        <ProjectSwitcher />
-        {/* 项目 / 文档是一条面包屑（2026-09-15 打磨批次 F）：一个斜杠，不是竖线加两个 chip */}
-        <span aria-hidden className="type-meta shrink-0 select-none">
-          /
-        </span>
-        <DocumentMenu />
+    <header
+      data-topbar
+      className="flex min-h-11 shrink-0 flex-wrap items-center gap-x-3 gap-y-1.5 bg-surface px-3 py-1.5"
+    >
+      <div className="flex min-w-0 basis-full flex-wrap items-center gap-x-3 gap-y-1 min-[1280px]:flex-1 min-[1280px]:basis-auto">
+        <div data-topbar-document className="flex min-w-0 flex-1 items-center gap-1.5">
+          <Brand />
+          {/* 名称可以截断，操作区独立换行，不把按钮挤进面包屑。 */}
+          <ProjectSwitcher />
+          <span aria-hidden className="type-meta shrink-0 select-none">/</span>
+          <DocumentMenu />
+        </div>
         <SaveStateLabel />
         <RecoveryNotice />
       </div>
 
-      <ToolCluster layoutTools={!fastEdit} />
-
-      <div className="flex min-w-0 flex-1 items-center justify-end gap-2">
-        <ZoomControls />
-        {/* 写回原始文件是高频动作，常驻导出左侧；导出仍是顶栏唯一填色主动作 */}
-        <WriteBackTopBarButton />
-        <ExportButton />
-        <MoreMenu />
+      <div data-topbar-tools className="flex min-w-0 basis-full flex-wrap items-center gap-x-3 gap-y-1.5 min-[1280px]:basis-auto">
+        <DocumentActions />
+        {!fastEdit && <MarkTools />}
+        {!fastEdit && <PanelGridButton />}
+        <div data-topbar-output className="ml-auto flex flex-wrap items-center justify-end gap-1">
+          <ZoomControls />
+          {/* 正式保存、写回素材与图像导出分别保留入口；导出是唯一填色主动作。 */}
+          <WriteBackTopBarButton />
+          <ExportButton />
+          <MoreMenu />
+        </div>
       </div>
     </header>
   )
+}
+
+function PanelGridButton() {
+  const { t } = useTranslation('workspace')
+  return <Button size="md" data-open-panel-grid onClick={() => useUiStore.getState().setRightTab('canvas')}>
+    <LayoutGrid size={ICON_SIZE.md} />
+    {t('panelGrid.open', { ns: 'inspector' })}
+  </Button>
 }
 
 /**
@@ -161,7 +179,7 @@ function importPackage() {
     const ui = useUiStore.getState()
     try {
       const res = await openPackage(file)
-      await openLayoutDocument(res.doc)
+      if (!(await openLayoutDocument(res.doc))) return
       const missing = requestRelinkMissing()
       const drift = res.drifted.length
       if (!missing && !drift) {
@@ -196,15 +214,6 @@ function Brand() {
 }
 
 /**
- * 保存状态：贴着文档名，**报告的是保存状态机的当前状态**（R-06），
- * 不是从 `dirty` 布尔现推的两句话。
- *
- * 改造前这里只有两种说法：「保存中…」和「已自动保存 14:03」——而
- * 「保存中…」同时表示"有未保存修改"、"正在写盘"和"刚打开还没存过"三件事，
- * 「已自动保存 14:03」在写盘失败之后照样显示（`dirty` 被 flush 清掉了，
- * 失败只派了一个 4.5 秒后消失的事件）。用户看不出磁盘上到底是哪一版。
- */
-/**
  * 「发现未恢复的编辑」：贴在保存状态右侧的一句话 + 两个出口，不再是整条横幅
  * （2026-09-11 用户反馈）。摘要（几张画布、几个对象、存于几点）走 title。
  */
@@ -216,7 +225,7 @@ function RecoveryNotice() {
   return (
     <span
       role="status"
-      className="inline-flex shrink-0 items-center gap-1.5 text-xs text-ink-2"
+      className="inline-flex min-w-0 flex-wrap items-center gap-1.5 text-xs text-ink-2"
       // 文档名是用户内容，作为插值原样透出
       title={t('docBanner.recoveryBody', {
         name: s.name,
@@ -237,14 +246,12 @@ function RecoveryNotice() {
   )
 }
 
+/** 正式文档的保存状态只从 namedSave 读取；自动恢复副本不代表已保存。 */
 function SaveStateLabel() {
   const { t } = useTranslation('workspace')
-  const saveState = useDocumentStore((s) => s.saveState)
-  const lastPersisted = useDocumentStore((s) => s.lastPersisted)
-  const hasContent = useDocumentStore(
-    (s) => s.doc.objects.length > 0 || s.doc.guides.length > 0 || s.canvases.length > 1,
-  )
-  if (!hasContent) return null
+  const saveState = useDocumentStore(getDocumentSaveStatus)
+  const namedTarget = useDocumentStore((s) => s.namedTarget)
+  const namedSavedAt = useDocumentStore((s) => s.namedSavedAt)
 
   const text =
     saveState === 'saving'
@@ -253,20 +260,23 @@ function SaveStateLabel() {
         ? t('topbar.saveDirty')
         : saveState === 'saved'
           ? t('topbar.saveSaved')
-          : saveState === 'save_error'
+          : saveState === 'error'
             ? t('topbar.saveError')
             : saveState === 'conflict'
               ? t('topbar.saveConflict')
-              : lastPersisted
-                ? t('topbar.saveClean', { time: formatTime(lastPersisted) })
-                : t('topbar.saveCleanNoTime')
-  const bad = saveState === 'save_error' || saveState === 'conflict'
+              : namedTarget
+                ? namedSavedAt
+                  ? t('topbar.saveClean', { time: formatTime(namedSavedAt) })
+                  : t('topbar.saveCleanNoTime')
+                : t('topbar.saveNotYet')
+  const bad = saveState === 'error' || saveState === 'conflict'
 
   return (
     <span
       aria-live="polite"
+      data-document-save-state={saveState}
       className={cn(
-        'hidden shrink-0 text-xs min-[900px]:inline',
+        'shrink-0 text-xs',
         bad ? 'text-danger' : 'text-ink-3',
       )}
       title={t('topbar.saveStateTitle', { mod: MOD })}
@@ -312,7 +322,7 @@ function DocumentMenu() {
         }}
         // 可编辑框只有一副（宪法第五节）：聚焦态由 fieldBox 给，不自己画一圈 accent 实线。
         // 画布页签的重命名早就是 TextInput，这里是最后一处手写的（2026-09-15 打磨 T4）
-        className="w-40"
+        className="min-w-0 w-40 shrink"
       />
     )
   }
@@ -320,7 +330,7 @@ function DocumentMenu() {
   return (
     <Menu
       trigger={
-        <Button size="md" className="max-w-52 text-ink-2" aria-label={t('topbar.documentLabel', { name })}>
+        <Button size="md" data-document-menu className="min-w-0 max-w-52 shrink text-ink-2" aria-label={t('topbar.documentLabel', { name })}>
           <span className="truncate">{name}</span>
           <ChevronDown size={ICON_SIZE.xs} className="shrink-0 text-ink-3" />
         </Button>
@@ -344,7 +354,7 @@ function DocumentMenu() {
         {t('topbar.versionTimeline')}
       </MenuItem>
       <MenuItem onSelect={() => void exportPackage()}>{t('topbar.exportPackage')}</MenuItem>
-      <MenuItem onSelect={importPackage}>{t('topbar.importPackage')}</MenuItem>
+      <MenuItem data-document-action="import-package" onSelect={importPackage}>{t('topbar.importPackage')}</MenuItem>
 
       <MenuSeparator />
       <MenuLabel>{t('topbar.recentDocuments')}</MenuLabel>
@@ -380,13 +390,15 @@ function DocumentMenu() {
   )
 }
 
-function ToolCluster({ layoutTools }: { layoutTools: boolean }) {
+function DocumentActions() {
   const { t } = useTranslation(['workspace', 'common'])
   const fmt = useFormatMessage()
   const canUndo = useDocumentStore((s) => s.past.length > 0)
   const canRedo = useDocumentStore((s) => s.future.length > 0)
   const undoLabel = useDocumentStore((s) => s.past.at(-1)?.label)
   const redoLabel = useDocumentStore((s) => s.future[0]?.label)
+  const undoBlocked = useInteractionStore(undoRedoBlocked)
+  const saving = useDocumentStore((s) => s.namedSaveState === 'saving')
 
   // 必须走带 undoRedoBlocked 守卫的入口：拖动进行中点撤销会把事务当场结算，
   // 后续位移绕过历史（真实撞见过的数据损坏路径）
@@ -394,22 +406,25 @@ function ToolCluster({ layoutTools }: { layoutTools: boolean }) {
   const runRedo = () => runUndoRedo(true)
 
   return (
-    <div className="flex shrink-0 items-center gap-0.5">
+    <div data-document-actions className="flex shrink-0 items-center gap-1">
       <Tip
         label={
           undoLabel
             ? t('workspace:topbar.undoWith', { label: fmt(undoLabel) })
             : t('workspace:topbar.undo')
         }
-        shortcut={`${MOD}Z`}
+        shortcut={combo(MOD, 'Z')}
       >
         <Button
-          size="icon"
-          disabled={!canUndo}
+          size="md"
+          data-document-action="undo"
+          disabled={!canUndo || undoBlocked}
           onClick={runUndo}
           aria-label={t('workspace:topbar.undo')}
+          aria-keyshortcuts={isMac ? 'Meta+Z' : 'Control+Z'}
         >
           <Undo2 size={ICON_SIZE.md} />
+          {t('workspace:topbar.undo')}
         </Button>
       </Tip>
       <Tip
@@ -418,19 +433,34 @@ function ToolCluster({ layoutTools }: { layoutTools: boolean }) {
             ? t('workspace:topbar.redoWith', { label: fmt(redoLabel) })
             : t('workspace:topbar.redo')
         }
-        shortcut={`⇧${MOD}Z`}
+        shortcut={isMac ? '⇧⌘Z' : 'Ctrl+Shift+Z'}
       >
         <Button
-          size="icon"
-          disabled={!canRedo}
+          size="md"
+          data-document-action="redo"
+          disabled={!canRedo || undoBlocked}
           onClick={runRedo}
           aria-label={t('workspace:topbar.redo')}
+          aria-keyshortcuts={isMac ? 'Meta+Shift+Z' : 'Control+Shift+Z Control+Y'}
         >
           <Redo2 size={ICON_SIZE.md} />
+          {t('workspace:topbar.redo')}
         </Button>
       </Tip>
-
-      {layoutTools && <MarkTools />}
+      <Tip label={t('workspace:topbar.saveTip')} shortcut={combo(MOD, 'S')}>
+        <Button
+          variant="secondary"
+          size="md"
+          data-document-action="save"
+          loading={saving}
+          onClick={runManualSave}
+          aria-label={t('common:actions.save')}
+          aria-keyshortcuts={isMac ? 'Meta+S' : 'Control+S'}
+        >
+          {!saving && <Save size={ICON_SIZE.md} />}
+          {t('common:actions.save')}
+        </Button>
+      </Tip>
     </div>
   )
 }
@@ -449,9 +479,7 @@ function MarkTools() {
   const ActiveMark = activeMark?.icon
 
   return (
-    <>
-      <span className="mx-1.5 h-5 w-px bg-border" />
-
+    <div data-topbar-marks className="flex shrink-0 items-center gap-0.5">
       <Tip label={t('common:objectType.text')} shortcut="T">
         <Button
           size="icon"
@@ -504,7 +532,7 @@ function MarkTools() {
           <Tags size={ICON_SIZE.md} />
         </Button>
       </Tip>
-    </>
+    </div>
   )
 }
 

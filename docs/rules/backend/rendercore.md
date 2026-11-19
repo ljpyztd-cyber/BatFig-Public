@@ -5,6 +5,14 @@
 > 表里（`rendercore/` 那一行）。这里是这一主题规则的**唯一全文**；速查表只留一行。
 > 改规则改这里，并同步那一行。
 
+BatFig 本机扩展（2026-10-04，ADR 0060）：`Arial` 与 `Times New Roman` 是显式具名字体族，沿用原通用族的默认值以保护旧文档。
+它们由 `fonts.local_font_records(family)` 从用户本机读取并校验真实 family / PostScript 名 / 样式 / 嵌入限制，
+不加入 OFL 分发 allowlist，不打包或传给浏览器。两族没有 CJK 回退，缺字形在 `plan` 编译时硬拒绝。
+`canvas_font_status` 返回每张脸的实际覆盖；`canvas_text_preview` 从相同 Canonical PDF 生成 PNG 预览。
+静态覆盖生成物只描述原三通用族；字体政策身份包含两族本机内容身份。看护 `tests/test_batfig_canvas_arial.py`、`tests/test_batfig_times_new_roman.py`。
+下文历史的「字体只认 allowlist」及「缺字写 .notdef」限定于原三通用族，两族本机字体按本段合同执行。
+共享叶子 `engine/fontpolicy.py` 只含标准库数据定义，不属于科学栈 worker 层；RenderCore 与执行侧共读它，不互相导入渲染实现。
+
 - **分层是硬边界**（`tests/support/importgraph.py` 的 `rendercore_model` / `rendercore_native`
   两层 + 层规则，`tests/test_rendercore_model.py` 钉外部名字）：纯模型（`ir` / `geometry` /
   `typography` / `fonts` / `sources` / `plan` / `placement` / `raster`）**只许标准库**与仓库里

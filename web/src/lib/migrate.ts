@@ -1,4 +1,5 @@
 import { newId } from '@/lib/id'
+import { normalizePanelGridSettings } from '@/lib/panelGrid'
 import type {
   CanvasObject,
   FigureDocument,
@@ -92,6 +93,13 @@ export function normalizeLayout(
     )
     doc.guides = Array.isArray(raw.guides) ? (raw.guides as FigureDocument['guides']) : []
     doc.name = typeof raw.name === 'string' && raw.name ? raw.name : name
+    // 网格是用户明确采用后的文档内容；旧版没有它时，不能在读档时自动重排。
+    if (raw.panelGrid && typeof raw.panelGrid === 'object' && !Array.isArray(raw.panelGrid)) {
+      doc.panelGrid = normalizePanelGridSettings(
+        raw.panelGrid,
+        doc.objects.filter((object) => object.type === 'panel' && !object.hidden).length,
+      )
+    }
     // 样式绑定（ADR 0081）是 schema 2 形状里的可选字段：原样带过来，否则打开一份绑定的版面
     // 再存一次，绑定就静默没了（Codex #547 P1）。形状不对的不收
     const style = raw.style as Unknown | undefined

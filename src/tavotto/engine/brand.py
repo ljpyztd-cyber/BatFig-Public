@@ -1,6 +1,6 @@
 """品牌与格式标识常量（纯标准库；Flask 父进程与 worker 都可 import）。
 
-产品正式名称 Tavotto，拼写与大小写固定。
+本分支显示名称 BatFig，保留 Tavotto 协议标识与上游来源信息。
 
 **这一档没有 LEGACY_*，是有意的。** 2026-08-20 从 Magplot 改名时选的是干净
 断裂：`magplot-package` / `.magplot` / `magplot-proof` 一律不再认，Magic Matplot
@@ -10,7 +10,8 @@
 （文档 schema 的迁移是另一回事，`migrateToProject` 那条链照旧。）
 """
 
-PRODUCT_NAME = "Tavotto"
+PRODUCT_NAME = "BatFig"
+PRODUCT_ORIGIN = "Based on Tavotto · AGPL-3.0"
 
 PACKAGE_KIND = "tavotto-package"
 PROOF_KIND = "tavotto-proof"

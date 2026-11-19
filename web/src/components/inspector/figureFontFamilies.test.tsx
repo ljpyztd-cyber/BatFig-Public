@@ -18,7 +18,7 @@ import { resetGestureCoordinator } from '@/store/gestureCoordinator'
 import { useRenderStore } from '@/store/renderStore'
 import { seedExactRender } from '@/test/renderFixtures'
 import { emptyProject, type PanelObject } from '@/types/document'
-import { FIGURE_TEXT_SINGLE_PROPS, useFigureTypography, type TypographyAdapter } from './typographyAdapter'
+import { FIGURE_TEXT_BATCH_PROPS, FIGURE_TEXT_SINGLE_PROPS, useFigureTypography, type TypographyAdapter } from './typographyAdapter'
 
 /** 写入会触发一次渲染：像真引擎那样把同一份 manifest（含本机表）再发回来 */
 const engineRender = vi.fn()
@@ -58,6 +58,8 @@ const titleEl: ManifestElement = {
   ],
 } as unknown as ManifestElement
 
+const xlabelEl: ManifestElement = { ...titleEl, gid: 'axes_0.xlabel', role: 'axislabel' } as ManifestElement
+
 const manifestOf = (families?: string[]): Manifest =>
   ({
     stem: 'Fig1',
@@ -85,14 +87,16 @@ const panelOf = (): PanelObject =>
 let root: Root
 let host: HTMLDivElement
 let adapter: TypographyAdapter
+let selected: ManifestElement[] = [titleEl]
 
 function Harness() {
   const panel = useDocumentStore((s) => s.doc.objects.find((o) => o.id === 'p1')) as PanelObject
-  adapter = useFigureTypography(panel, [titleEl], FIGURE_TEXT_SINGLE_PROPS)
+  adapter = useFigureTypography(panel, selected, selected.length > 1 ? FIGURE_TEXT_BATCH_PROPS : FIGURE_TEXT_SINGLE_PROPS)
   return null
 }
 
-async function mount(manifest: Manifest) {
+async function mount(manifest: Manifest, elements: ManifestElement[] = [titleEl]) {
+  selected = elements
   resetGestureCoordinator()
   engineRender.mockReset()
   engineRender.mockResolvedValue({ rev: 2, manifest, svg: '<svg/>', warnings: [] })
@@ -147,6 +151,22 @@ describe('withMachineFamilies（并表的唯一出处）', () => {
 })
 
 describe('useFigureTypography：字体下拉与写入校验拿同一份表', () => {
+  it('batch selection changes actual font overrides together and undo/redo preserves the font names', async () => {
+    const elements = [titleEl, xlabelEl]
+    const manifest = { ...manifestOf([...MACHINE, 'Times New Roman']), elements }
+    await mount(manifest, elements)
+    const before = useDocumentStore.getState().past.length
+    expect(adapter.count).toBe(2)
+    expect(adapter.fieldOf('fontFamily')?.options).toContain('Times New Roman')
+    await act(async () => adapter.writeOnce('fontFamily', 'Times New Roman'))
+    for (const el of elements) expect(overrideOf(el.gid, 'fontfamily')).toBe('Times New Roman')
+    expect(useDocumentStore.getState().past.length).toBe(before + 1)
+    await act(async () => useDocumentStore.getState().undo())
+    for (const el of elements) expect(overrideOf(el.gid, 'fontfamily')).toBeUndefined()
+    await act(async () => useDocumentStore.getState().redo())
+    for (const el of elements) expect(overrideOf(el.gid, 'fontfamily')).toBe('Times New Roman')
+  })
+
   it('下拉里能看到本机字体，选一个本机才有的字体真的写得下去', async () => {
     await mount(manifestOf(MACHINE))
     const field = adapter.fieldOf('fontFamily')!

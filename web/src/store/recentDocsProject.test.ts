@@ -7,7 +7,9 @@
  * 记的是**写下那一刻**的项目：项目后来改名不追认，那条旧记录说的是当时的事。
  */
 import { literal } from '@/i18n'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+vi.mock('@/lib/closeGuard', () => ({ requestLeaveDocument: vi.fn(async () => true) }))
 import { setCurrentProjectLabel } from '@/lib/projectLabel'
 import { setCurrentProjectId } from '@/lib/session'
 import { emptyProject, type ProjectDocument, type TextObject } from '@/types/document'

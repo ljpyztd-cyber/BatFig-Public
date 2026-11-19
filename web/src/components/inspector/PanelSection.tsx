@@ -16,11 +16,12 @@ import {
   Unlink2,
 } from '@/components/ui/icons'
 import { ICON_SIZE } from '@/components/ui/Icon'
-import { usePanelRender, useRenderStore } from '@/store/renderStore'
+import { exactPanelManifest, usePanelRender, useRenderStore } from '@/store/renderStore'
 import { msg, t as translate, type UiMessage } from '@/i18n'
 import { formatQuantity } from '@/i18n/format'
 import { BASE_FONT_PT, effectiveDpi, effectivePt, formatCm, formatMm, round1 } from '@/lib/units'
 import { cn } from '@/lib/utils'
+import { effectiveOverride } from '@/lib/effectiveOverride'
 import type { PanelInfo } from '@/lib/api'
 import {
   beginCrop,
@@ -53,6 +54,7 @@ import { Button, IconButton } from '../ui/Button'
 import { Dialog } from '../ui/Dialog'
 import { Disclosure, Reveal, Row, Section } from '../ui/Field'
 import { NumberField, TextInput } from '../ui/Input'
+import { Toggle } from '../ui/Toggle'
 import { Tip } from '../ui/Tooltip'
 import { ArrangeSection } from './ArrangeSection'
 import { GroupToggle } from './GroupToggle'
@@ -81,6 +83,7 @@ export function PanelSection({ objs }: { objs: PanelObject[] }) {
           变换 → 内容适配 → 排列 → 更多 → 源文件（2026-09-13 审计 B09 的固定顺序） */}
       {one?.script && <ElementEditEntry panel={one} />}
       {one && <PanelCapabilityNote panel={one} />}
+      <PanelBackgroundSection objs={objs} />
       <GeometrySection objs={objs} />
       <ImageOpsSection objs={objs} />
       {/* 单选的排列（对齐到画布 + 层级）就在这里；多选的排列由属性页统一摆在最后 */}
@@ -91,6 +94,35 @@ export function PanelSection({ objs }: { objs: PanelObject[] }) {
       <SourceSection panel={one ?? undefined} objs={objs} />
     </>
   )
+}
+
+export function PanelBackgroundSection({ objs }: { objs: PanelObject[] }) {
+  useTranslation('inspector')
+  const byId = useAssetStore((s) => s.byId)
+  const editable = objs.filter((panel) => !!panel.script &&
+    (panel.fileKind === 'runtime' || byId[panel.fileId]?.capability?.status === 'editable'))
+  const enabled = useRenderStore((state) => editable.every((panel) => {
+    const figure = exactPanelManifest(state, panel)?.elements.find((element) => element.gid === 'figure')
+    return ['transparent', 'axes_transparent'].every((prop) => {
+      const override = effectiveOverride(panel.overrides, 'figure', prop)
+      return (override ? override.value : figure?.editable.find((field) => field.prop === prop)?.value) === true
+    })
+  }))
+  if (!editable.length) return null
+  return <Section>
+    <Row label={pn('transparentBackground')} labelWidth={INSPECTOR_LABEL_W}>
+      <Toggle aria-label={pn('transparentBackground')} checked={enabled} onChange={(value) => {
+        updateObjects(editable.map((panel) => panel.id), hist('setPanelBackground'), (object) => {
+          if (object.type !== 'panel') return
+          for (const prop of ['transparent', 'axes_transparent']) {
+            object.overrides = object.overrides.filter((p) => p.gid !== 'figure' || p.prop !== prop)
+            object.overrides.push({ gid: 'figure', prop, value })
+          }
+        })
+      }} />
+    </Row>
+    <p className="mt-1 text-xs text-ink-3">{pn('transparentBackgroundHint')}</p>
+  </Section>
 }
 
 /**

@@ -72,8 +72,20 @@ def test_no_web_font_is_fetched_or_embedded():
     """
     bad: list[str] = []
     face = re.compile(r"@font-face|fonts\.googleapis\.com|fonts\.gstatic\.com|font/woff")
-    for rel in _tracked_files():
+    # The subject is the current source tree, including new files before staging;
+    # a tracked path deleted by an in-progress rename is no longer source.
+    listed = subprocess.run(
+        ["git", "ls-files", "--cached", "--others", "--exclude-standard", "--", "web"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=True,
+    ).stdout.splitlines()
+    for rel in sorted(set(listed)):
         if not rel.startswith("web/") or not rel.endswith((".ts", ".tsx", ".css", ".html")):
+            continue
+        if not (ROOT / rel).is_file():
             continue
         text = (ROOT / rel).read_text(encoding="utf-8", errors="ignore")
         if face.search(text):
@@ -151,4 +163,14 @@ def test_every_offered_family_can_actually_be_drawn(family):
     from tavotto.rendercore import typography
 
     assert typography.latin_family(family) == family
+    if family in ("Arial", "Times New Roman"):
+        from tavotto.rendercore.fonts import FontsUnavailable, local_font_records
+
+        try:
+            local_font_records(family)
+        except FontsUnavailable as exc:
+            # Local licensed families are user-installed, never bundled fonts.
+            with pytest.raises(FontsUnavailable, match=str(exc)):
+                pdfbackend.text_plan("Sample", family=family)
+            return
     assert pdfbackend.text_plan("Sample", family=family) == [("Sample", "primary")]

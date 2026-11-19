@@ -13,7 +13,9 @@
  *   * `ai.done` 带着 A 的 pj 到达时 B 不接（对照：B 自己的照常提示）。
  * 所有扣住的请求都在用例结束前放行并 await（Codex 在 #607 抓过悬着的 promise）。
  */
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+vi.mock('@/lib/closeGuard', () => ({ requestLeaveDocument: vi.fn(async () => true) }))
 
 import { currentProjectId, setCurrentProjectId } from '@/lib/session'
 import { handleServerEvent } from '@/hooks/useServerEvents'

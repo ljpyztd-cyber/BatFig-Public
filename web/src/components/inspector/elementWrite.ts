@@ -12,11 +12,11 @@ import { getHistoryMode, previewStyle } from '@/store/svgPreviewStore'
 import type { PanelObject } from '@/types/document'
 import { propLabel } from './roles/registry'
 import { effectiveOverride } from '@/lib/effectiveOverride'
+import { useColorPreview } from './useColorPreview'
 
 /**
- * 原生取色对话框（`<input type="color">`）不保证发 blur：连续拖着选色时，
- * 只能靠「安静了这么久」判定这一轮结束。取值刻意大于渲染防抖（300ms），
- * 免得刚停手就被当成两轮。
+ * 连续数值控件未提供明确结束事件时的兜底。取色输入由 ColorField 在本地保留
+ * 草稿，原生 change / blur 才提交一次；不再用安静计时把一次取色拆成多轮。
  */
 export const GESTURE_QUIET_MS = 450
 
@@ -114,6 +114,7 @@ export interface ElementWriter {
   writeOnce: (prop: string, value: unknown) => void
   /** 这一轮结束（输入框失焦 / 取色盘关掉） */
   endGesture: () => void
+  previewColor: (prop: string, value: string | null) => void
   beginGesture: (label?: string) => void
   /** 控件上写死的脚本坐标系的界 → 页面上的界（`pagePtLens.bound`） */
   pageBound: (prop: string, value: number) => number
@@ -131,6 +132,7 @@ const defaultGestureLabel = (): UiMessage => msg('element.editElement', undefine
  */
 export function useElementWriter(panel: PanelObject, element: ManifestElement): ElementWriter {
   const gesture = useFieldGesture(panel, defaultGestureLabel())
+  const previewColor = useColorPreview(panel, [element])
   const gid = element.gid
   const role = element.role
   const lens = pagePtLens(panel)
@@ -163,6 +165,7 @@ export function useElementWriter(panel: PanelObject, element: ManifestElement): 
 
   return {
     read,
+    previewColor,
     readScript,
     fieldOf,
     has: (prop) => !!rawField(prop),

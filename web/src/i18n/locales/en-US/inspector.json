@@ -75,11 +75,58 @@
     "zDown": "Send backward",
     "zTop": "Bring to front",
     "zUp": "Bring forward",
-    "zorderLabel": "Layer"
+    "zorderLabel": "Layer",
+    "basisLabel": "Align bounds",
+    "basisAxes": "Axes",
+    "basisImage": "Image bounds",
+    "basisHint": "Colorbars are excluded from axes alignment and can be adjusted separately. Images without axes and annotations use object bounds; size matching uses image dimensions.",
+    "axesSyncing": "Axes layout is not ready. Read axes and retry, or switch to image bounds.",
+    "readAxes": "Read axes"
   },
   "assistantRunningTip": "Assistant is running",
   "autoHideAria": "Right panel auto-hides; click to pin it",
   "autoHideTip": "Hides when you clear the selection. Click to pin.",
+  "panelGrid": {
+    "title": "Canvas figure grid",
+    "open": "Arrange figures",
+    "summary_one": "{{count}} figure · {{rows}} × {{cols}} grid",
+    "summary_other": "{{count}} figures · {{rows}} × {{cols}} grid",
+    "apply": "Apply to whole canvas",
+    "columns": "Columns",
+    "ratio": "Cell ratio",
+    "ratioPreset": "Arrange with {{ratio}} cells",
+    "ratioHint": "Axes mode matches main plot proportions, excluding right colorbars and outside legends. Fixed-aspect plots keep their shape; image mode preserves whole-figure proportions.",
+    "preparing": "Adjusting and verifying plot frames and text sizes…",
+    "changed": "The canvas changed during layout. Apply again to use the latest edits.",
+    "geometry_pending": "Exact axes geometry is not ready. Read axes first.",
+    "render_failed": "Plot-frame rendering failed. The canvas is unchanged; check rendering details and retry.",
+    "geometry_mismatch": "Rendered axes do not match the requested proportions. The canvas is unchanged.",
+    "font_size_invalid": "Invalid axis text size. Enter a valid size for the final page.",
+    "font_size_unsupported": "Some figures cannot use this final page size, or their axis text is locked. No changes were applied.",
+    "font_size_mismatch": "The rendered text size does not match the requested final page size. No changes were applied.",
+    "font_layout_failed": "Axis text does not fit within the figure. No changes were applied; enlarge the canvas or reduce the text size and try again.",
+    "preserved_one": "Layout applied; {{count}} plot with protected or unsupported geometry kept its shape.",
+    "preserved_other": "Layout applied; {{count}} plots with protected or unsupported geometry kept their shapes.",
+    "gap": "Row/col gap",
+    "axisFontSize": "Axis text size",
+    "axisFontHint": "Match X/Y tick numbers and axis titles at the final page size, allowing margins for axis text; colorbar, legend and panel-label text sizes stay unchanged.",
+    "gapPreset": "Arrange with {{gap}} mm row and column gaps",
+    "gapValue": "{{gap}} mm",
+    "margin": "Margin",
+    "basis": "Align by",
+    "columnAlign": "In columns",
+    "rowAlign": "In rows",
+    "quickHint": "Ratio, gap presets and alignment options apply immediately. After entering numbers, choose Apply to whole canvas.",
+    "applied_one": "Arranged {{count}} figure in a grid",
+    "applied_other": "Arranged {{count}} figures in a grid",
+    "history": "Arrange canvas figure grid",
+    "pending": "Axes bounds are not ready. Read axes or switch to image bounds.",
+    "locked": "Some figures are locked. Unlock them before arranging the whole canvas.",
+    "group": "Some figures are grouped. Ungroup them before arranging the whole canvas.",
+    "size": "This layout does not fit. Reduce gaps or margins, or enlarge the canvas.",
+    "invalid": "Invalid layout settings. Check the columns, ratio, gaps and margins.",
+    "empty": "Add figures to arrange them in a grid."
+  },
   "canvas": {
     "allOff": "All off",
     "background": "Background",
@@ -137,7 +184,10 @@
     "swap": "Swap W/H",
     "transparent": "Transparent",
     "transparentBg": "Transparent background",
-    "viewAids": "View aids"
+    "viewAids": "View aids",
+    "gridDensity": "Grid density",
+    "gridDensityHint": "Smaller spacing gives a denser grid. Guides are not exported.",
+    "gridPreset": "{{size}} mm"
   },
   "closePanel": "Close right panel",
   "control": {
@@ -196,7 +246,20 @@
       "leftCenter": "Left, middle"
     },
     "tickSpineDiagramHint": "Click a side to toggle its tick marks and spine",
-    "legendBestShort": "Auto"
+    "legendBestShort": "Auto",
+    "diyName": "DIY colormap",
+    "diyTitle": "DIY heatmap colors",
+    "diyHint": "Choose at least 3 color stops, adjust positions or start from a palette. Apply updates the heatmap and its colorbar together.",
+    "diyApply": "Apply colors",
+    "diyStop": "Stop {{index}}",
+    "diyColor": "Stop {{index}} color",
+    "diyPosition": "Stop {{index}} position",
+    "diyRemove": "Remove stop {{index}}",
+    "diyRemoveLabel": "Remove",
+    "diyAdd": "Add color stop",
+    "diyReverse": "Reverse colors",
+    "diyEven": "Space evenly",
+    "diyInvalid": "Use 3–32 valid color stops with increasing positions from 0% to 100%."
   },
   "element": {
     "absentAppearance": "This element comes from the script; editing it here isn’t supported in this version.",
@@ -204,7 +267,7 @@
     "alignBaseline": "Reference",
     "alignBaselineSize": "Size reference",
     "alignHdist": "Distribute horizontally (needs 3+)",
-    "alignHint": "For axes this changes their share of the figure; for text and legends it moves the anchor. Neither changes the figure’s size on the canvas.",
+    "alignHint": "For axes this changes their share of the figure; for text and legends it moves the anchor. Neither changes the figure’s size on the canvas. Colorbars are excluded from alignment and can be adjusted separately.",
     "alignHintAnnotations": "Canvas annotations line up on the same baseline; their position changes on the canvas object.",
     "alignHintGroup": "Dragging the group's bounding-box handles on the canvas scales it too.",
     "alignInvalid": "An element in the selection has invalid geometry. Alignment cancelled.",
@@ -618,7 +681,8 @@
     "toggleBold": "Toggle bold",
     "toggleItalic": "Toggle italic",
     "toggleUnderline": "Toggle underline",
-    "transformCase": "Change letter case"
+    "transformCase": "Change letter case",
+    "setPanelBackground": "Change figure background"
   },
   "lock": "Lock",
   "locked": "Locked",
@@ -690,7 +754,9 @@
     "restore": "Restore",
     "replaceAction": "Choose…",
     "cropRow": "Framing",
-    "fitRow": "Fit"
+    "fitRow": "Fit",
+    "transparentBackground": "Transparent figure",
+    "transparentBackgroundHint": "Remove editable figure and 2D axes backgrounds; keep the white canvas."
   },
   "panelLabel": "Right panel",
   "pinnedAria": "Right panel is pinned; click to auto-hide it",
@@ -832,7 +898,8 @@
     "yscale": "Y scale",
     "zorder": "Stacking order",
     "loc_anchor": "Anchor",
-    "title": "Title"
+    "title": "Title",
+    "axes_transparent": "Transparent axes background"
   },
   "propByRole": {
     "bar": {
@@ -989,7 +1056,13 @@
     "superscript": "Superscript",
     "superscriptTitle": "Superscript: select a range, then click ({{key}})",
     "title": "Text",
-    "underline": "Underline"
+    "underline": "Underline",
+    "symbols": "Symbols / units",
+    "exactFontDefaultText": "Text",
+    "exactFontSourceEditor": "Edit source ({{family}} preview after confirmation)",
+    "exactFontPreviewLoading": "Rendering {{family}} preview…",
+    "exactFontPreviewFailed": "{{family}} preview unavailable: {{error}}",
+    "exactFontUnavailable": "Local {{family}} or the selected weight/style is unavailable. Preview and export cannot be verified. Install the genuine font and restart the service; no font substitution is allowed."
   },
   "textActions": {
     "caseTitle": "Change letter case",
@@ -1039,8 +1112,9 @@
     "color": "Colour",
     "font": "Font",
     "fontMissingHint": "That font isn’t installed, so the figure uses another one. Pick an available font, or install it.",
-    "fontMissingTag": " (not installed)",
-    "size": "Size"
+    "fontMissingTag": " (unavailable)",
+    "size": "Size",
+    "fontMissingExactHint": "{{family}} or the selected weight/style is unavailable. Install the genuine font or choose an available family; no silent substitution is allowed."
   },
   "tick": {
     "axisSwitch": "Axis to configure",

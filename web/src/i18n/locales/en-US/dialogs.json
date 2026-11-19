@@ -1,10 +1,15 @@
 {
   "closeGuard": {
-    "body": "This document has unsaved changes. Save before closing?",
+    "body": "This document has changes that are not saved to its file. Save before continuing, or continue without saving.",
     "discard": "Don’t save",
     "save": "Save and close",
-    "saveFailed": "Saving failed, so the window stays open. Resolve the problem, or choose “Don’t save” to close anyway.",
-    "title": "Unsaved changes"
+    "saveFailed": "The current changes are not fully saved, so closing or switching has stopped. Retry, or cancel and use Save as to resolve a file conflict.",
+    "title": "Unsaved changes",
+    "canvasBody": "This canvas has unsaved changes. Saving writes the whole document. Closing only the tab keeps the canvas available to reopen.",
+    "closeTab": "Close tab only",
+    "continueWithoutSave": "Don’t save",
+    "saveAndContinue": "Save and continue",
+    "fileName": "File name"
   },
   "export": {
     "advanced": "Advanced",

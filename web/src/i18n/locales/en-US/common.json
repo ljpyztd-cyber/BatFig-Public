@@ -12,7 +12,18 @@
   },
   "colorField": {
     "picker": "{{label}}: colour picker",
-    "none": "None"
+    "none": "None",
+    "presets": "Common colors and palettes",
+    "common": "Common colors",
+    "customHint": "Click the swatch to customize; applied when you finish picking."
+  },
+  "colorPalettes": {
+    "classic": "Classic",
+    "contrast": "High contrast",
+    "muted": "Muted",
+    "blueWhiteRed": "Blue—white—red",
+    "blueGold": "Blue—gray—gold",
+    "purpleGreen": "Purple—white—green"
   },
   "count": {
     "selectedObjects_one": "{{count}} object selected",

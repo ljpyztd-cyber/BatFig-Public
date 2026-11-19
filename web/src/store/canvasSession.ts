@@ -98,6 +98,16 @@ export function createCanvasAndActivate(name?: string): string {
   return id
 }
 
+/** Closing hides a tab; keep its content, history and UI session for reopening. */
+export function closeCanvasWithSession(id: string): void {
+  const store = useDocumentStore.getState()
+  if (!store.openTabs.includes(id) || store.openTabs.length < 2) return
+  const wasActive = id === store.activeCanvasId
+  if (wasActive) capture(id)
+  store.closeCanvasTab(id)
+  if (wasActive) restore(useDocumentStore.getState().activeCanvasId)
+}
+
 /** 删除画布（数据层守卫最后一张）；删的是激活画布时恢复邻居会话 */
 export function deleteCanvasWithSession(id: string): boolean {
   const store = useDocumentStore.getState()

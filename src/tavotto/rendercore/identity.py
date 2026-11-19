@@ -22,8 +22,9 @@ import hashlib
 import json
 from pathlib import Path
 
+from ..engine.fontpolicy import LOCAL_FONT_FAMILIES
 from . import BACKEND_NAME, BACKEND_VERSION
-from .fonts import allowlist_path
+from .fonts import FontsUnavailable, allowlist_path, local_font_records
 
 IDENTITY_VERSION = 1
 
@@ -42,9 +43,19 @@ def _sha(payload: dict) -> str:
 
 
 def fonts_policy_version() -> str:
-    """字体政策版本 = allowlist 文件的 sha256 前 16 位（加一张脸 / 换一个 hash 都会变）。
+    """字体政策版本包含 allowlist 与本机具名族的字节身份（或明确的不可用状态）。
     `preview.PreviewCache` 的缓存键与 `render_identity` 共用这一份。"""
-    return hashlib.sha256(Path(allowlist_path()).read_bytes()).hexdigest()[:16]
+    digest = hashlib.sha256(Path(allowlist_path()).read_bytes())
+    for family in LOCAL_FONT_FAMILIES:
+        digest.update(family.encode("utf-8"))
+        try:
+            records = local_font_records(family)
+        except FontsUnavailable as exc:
+            digest.update(exc.code.encode("utf-8"))
+        else:
+            for name, rec in sorted(records.items()):
+                digest.update(f"{name}:{rec.approved.sha256}".encode("utf-8"))
+    return digest.hexdigest()[:16]
 
 
 def render_identity(

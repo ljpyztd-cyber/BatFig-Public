@@ -10,7 +10,9 @@
  *   4. 调用方自带 `prepareDocument`（教程）时不动那份记录。
  */
 import { literal } from '@/i18n'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+vi.mock('@/lib/closeGuard', () => ({ requestLeaveDocument: vi.fn(async () => true) }))
 import { readProjectDocument } from '@/lib/projectDocs'
 import { setCurrentProjectId } from '@/lib/session'
 import { emptyProject, type ProjectDocument, type TextObject } from '@/types/document'

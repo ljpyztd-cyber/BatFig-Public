@@ -81,7 +81,7 @@ def test_each_family_maps_to_its_own_approved_face(family, bold, italic, want, p
     )
 
 
-@pytest.mark.parametrize("bad", [None, "", "Times New Roman", "Arial", "宋体", 7])
+@pytest.mark.parametrize("bad", [None, "", "Times", "Arial Narrow", "宋体", 7])
 def test_an_unknown_family_falls_back_to_the_default_instead_of_resolving_it(bad, provider):
     """认不出来的名字**不当成用户指定的字体去解析**。
 
@@ -160,7 +160,7 @@ def test_the_cjk_face_does_not_change_with_the_family(provider):
 
     faces = {
         typography.faces_for(provider, fam, b, i).cjk.resource.sha256
-        for fam in pdfbackend.CANVAS_TEXT_FAMILIES
+        for fam in typography.GENERIC_TEXT_FAMILIES
         for b in (False, True)
         for i in (False, True)
     }

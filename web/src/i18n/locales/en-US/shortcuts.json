@@ -6,7 +6,7 @@
     "spaceDrag": "Space+drag",
     "tools": "V / T / A / R / O / L",
     "wheelZoom": "{{mod}}+wheel",
-    "shiftClick": "⇧+click",
+    "shiftClick": "{{mod}}+click / ⇧+click",
     "rightClick": "Right-click",
     "altClick": "{{alt}}+click"
   },

@@ -269,6 +269,28 @@ def _tick_axis(ts: "TickSet"):
     return getattr(ts.ax, f"{ts.which}axis")
 
 
+def _tick_fontsize_snapshot(ts: "TickSet") -> tuple[float, float]:
+    """Keep the formatter's multiplier/offset size separate for exact undo.
+
+    ``tick_params(labelsize=...)`` only resizes tick labels, not offsetText.
+    The script may deliberately give those two parts different sizes; the
+    tuple is an internal restore value, while manifest still reports ticks.
+    """
+    return (
+        float(ts._first(lambda t: t.get_fontsize(), 8.5)),
+        float(_tick_axis(ts).get_offset_text().get_fontsize()),
+    )
+
+
+def _set_tick_fontsize(ts: "TickSet", value) -> None:
+    if isinstance(value, tuple):  # internal original snapshot, never a patch value
+        tick_size, offset_size = value
+    else:
+        tick_size = offset_size = float(value)
+    ts.tick_params(labelsize=tick_size)
+    _tick_axis(ts).get_offset_text().set_fontsize(offset_size)
+
+
 def _tick0(ts: "TickSet"):
     ticks = _tick_axis(ts).get_major_ticks()
     return ticks[0] if ticks else None
@@ -777,8 +799,8 @@ HANDLERS_TEXT: dict[tuple[str, str], tuple] = {
         _set_ticklabel_text,
     ),
     ("ticks", "fontsize"): (
-        lambda a: float(a._first(lambda t: t.get_fontsize(), 8.5)),
-        lambda a, v: a.tick_params(labelsize=float(v)),
+        _tick_fontsize_snapshot,
+        _set_tick_fontsize,
     ),
     ("ticks", "color"): (
         lambda a: a._first(lambda t: t.get_color(), "#000000"),

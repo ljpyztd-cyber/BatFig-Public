@@ -50,6 +50,7 @@ from colorbarmodel import (
     coincident_shared_axes_pairs,
     colorbar_host_count,
     colorbar_maps,
+    custom_colormap_spec,
     field_image_of,
     follow_map,
     scale_gids,
@@ -89,6 +90,7 @@ from overrides import (
     annotation_arrow_owner,
     annotation_text_draggable,
     artist_identity,
+    axes_background_visibility,
     cjk_fallback_candidates,
     collection_caps,
     color_mapping_is_live,
@@ -2088,7 +2090,8 @@ def _cmap_original(state: FigState, artist, gid: str) -> dict | None:
 def _cmap_field(m, state: FigState, artist, gid: str) -> dict:
     """`cmap` 这条 enum 字段的唯一构造处（Collection / AxesImage / 色条共用）。
 
-    `value` 是此刻色图的名字；`options` 只放**写得进 override 的名字**；
+    `value` 是此刻色图的名字，或编辑器 DIY 色图的完整 JSON 定义；
+    `options` 只放**写得进 override 的名字**；
     `cmap_current` / `cmap_original` 是两条只读事实（形态见 `_cmap_facts`），
     白名单里的注册色图不发（前端有离线表），缺席 = 前端按名字查表。
     自定义色图**顶着白名单里的名字**时照发：`value` 会与选项表里的一格同名，
@@ -2099,7 +2102,7 @@ def _cmap_field(m, state: FigState, artist, gid: str) -> dict:
     field = {
         "prop": "cmap",
         "type": "enum",
-        "value": cname,
+        "value": custom_colormap_spec(cm) or cname,
         "options": _cmap_options(cname),
         "group": "颜色映射",
     }
@@ -3816,6 +3819,12 @@ def _fields_for(el, state: FigState) -> list[dict]:
                 "prop": "transparent",
                 "type": "bool",
                 "value": not artist.patch.get_visible(),
+                "group": "背景",
+            },
+            {
+                "prop": "axes_transparent",
+                "type": "bool",
+                "value": all(not visible for _, visible in axes_background_visibility(artist)),
                 "group": "背景",
             },
         ]

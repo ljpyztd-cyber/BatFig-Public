@@ -3,11 +3,13 @@ import { useTranslation } from 'react-i18next'
 import { ArrowLeftRight, Trash2 } from '@/components/ui/icons'
 import { ICON_SIZE } from '@/components/ui/Icon'
 import { formatMm } from '@/lib/units'
+import { GRID_SIZE_PRESETS, MAX_GRID_SIZE, MIN_GRID_SIZE } from '@/lib/gridPrefs'
 import { msg, t as translate, type UiMessage } from '@/i18n'
 import { cn, MOD } from '@/lib/utils'
 import { clearGuides, removeGuide, setPageSetup, setPageSize } from '@/store/actions'
 import { useDocumentStore } from '@/store/documentStore'
 import { useUiStore } from '@/store/uiStore'
+import { applyPanelGrid, preparePanelGrid, usePanelGrid } from '@/store/panelGrid'
 import { Button, IconButton } from '../ui/Button'
 import { Disclosure, Row, Section } from '../ui/Field'
 import { ColorField, NumberField } from '../ui/Input'
@@ -15,6 +17,7 @@ import { Toggle } from '../ui/Toggle'
 import { Tip } from '../ui/Tooltip'
 import { INSPECTOR_LABEL_COL, INSPECTOR_LABEL_W } from './layout'
 import { MmField } from './MmField'
+import { PanelGridSection } from './PanelGridSection'
 
 /**
  * 期刊常用版心；宽度是硬约束，高度给个常见起点。
@@ -56,6 +59,7 @@ const PREVIEW_SCALE = PREVIEW_BOX / Math.max(...PRESETS.map((p) => Math.max(p.w,
 export function CanvasPage() {
   useTranslation('inspector')
   const page = useDocumentStore((s) => s.doc.page)
+  const colorScope = useDocumentStore((s) => `${s.loadSeq}:${s.activeCanvasId}`)
   const guides = useDocumentStore((s) => s.doc.guides)
   const ui = useUiStore()
   const active = PRESETS.find((p) => p.w === page.w && p.h === page.h)
@@ -78,6 +82,7 @@ export function CanvasPage() {
 
   return (
     <>
+      <CanvasPanelGrid />
       {/* 组头右侧原来挂着「150.0 × 100.0 mm」——它和 24px 下面的 `W [150 mm] H [100 mm]`
           是同一对数，还是两种格式（150.0 vs 150）。已表达过的不重复（打磨 L9）：
           尺寸留在可编辑的那两个框里，预设卡的 aria 名里也有 */}
@@ -158,6 +163,40 @@ export function CanvasPage() {
         </div>
       </Section>
 
+      <Section title={cv('gridDensity')} data-grid-settings>
+        <div className="flex flex-col gap-1.5">
+          <ToggleRow label={cv('grid')}>
+            <Toggle aria-label={cv('grid')} checked={ui.showGrid} onChange={ui.setShowGrid} />
+          </ToggleRow>
+          <Row label={cv('gridSize')} labelWidth={LABEL_W}>
+            <NumberField
+              ariaLabel={cv('gridSize')}
+              value={ui.gridSize}
+              min={MIN_GRID_SIZE}
+              max={MAX_GRID_SIZE}
+              step={0.5}
+              unit="mm"
+              onChange={(v) => ui.setCanvasPref({ gridSize: v })}
+            />
+          </Row>
+          <div className="flex flex-wrap gap-1">
+            {GRID_SIZE_PRESETS.map((size) => (
+              <Button
+                key={size}
+                size="sm"
+                active={ui.gridSize === size}
+                aria-pressed={ui.gridSize === size}
+                data-grid-spacing={size}
+                onClick={() => ui.setCanvasPref({ gridSize: size })}
+              >
+                {cv('gridPreset', { size })}
+              </Button>
+            ))}
+          </div>
+          <p className="text-xs text-ink-3">{cv('gridDensityHint')}</p>
+        </div>
+      </Section>
+
       <Disclosure
         title={cv('background')}
         open={open('bg')}
@@ -175,6 +214,7 @@ export function CanvasPage() {
           <Row label={cv('bgColor')} labelWidth={LABEL_W}>
             <ColorField
               ariaLabel={cv('bgColor')}
+              scopeKey={colorScope}
               value={page.bg ?? '#FFFFFF'}
               onChange={(v) => setPageSetup({ bg: v }, hist('setPageBgColor'))}
               className={page.transparent ? 'pointer-events-none opacity-40' : undefined}
@@ -193,22 +233,6 @@ export function CanvasPage() {
           <ToggleRow label={cv('rulers')}>
             <Toggle aria-label={cv('rulers')} checked={ui.showRulers} onChange={ui.setShowRulers} />
           </ToggleRow>
-          <ToggleRow label={cv('grid')}>
-            <Toggle aria-label={cv('grid')} checked={ui.showGrid} onChange={ui.setShowGrid} />
-          </ToggleRow>
-          {ui.showGrid && (
-            <Row label={cv('gridSize')} labelWidth={LABEL_W}>
-              <NumberField
-                ariaLabel={cv('gridSize')}
-                value={ui.gridSize}
-                min={1}
-                max={50}
-                step={1}
-                unit="mm"
-                onChange={(v) => ui.setCanvasPref({ gridSize: v })}
-              />
-            </Row>
-          )}
         </div>
       </Disclosure>
 
@@ -349,6 +373,18 @@ export function CanvasPage() {
       </Disclosure>
     </>
   )
+}
+
+function CanvasPanelGrid() {
+  const { t } = useTranslation('inspector')
+  const plan = usePanelGrid()
+  const count = useDocumentStore((state) => state.doc.objects.filter((object) => object.type === 'panel' && !object.hidden).length)
+  const scope = useDocumentStore((state) => `${state.loadSeq}:${state.activeCanvasId}`)
+  const message = plan.busy ? t('panelGrid.preparing') : !count ? t('panelGrid.empty')
+    : plan.status === 'pending' ? t('panelGrid.pending')
+    : plan.status === 'blocked' ? t(`panelGrid.${plan.reason}`) : undefined
+  return <PanelGridSection value={plan.settings} panelCount={count} scopeKey={scope}
+    disabled={plan.busy} onApply={applyPanelGrid} onPrepare={preparePanelGrid} status={plan.status} message={message} />
 }
 
 /**

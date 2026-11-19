@@ -50,6 +50,18 @@ const disclosure = (title: string) =>
   )!
 
 describe('CanvasPage', () => {
+  it('grid controls are visible without expanding a disclosure; preset updates persist but do not edit the document', () => {
+    const doc = useDocumentStore.getState().doc
+    const history = useDocumentStore.getState().past
+    const preset = container.querySelector<HTMLButtonElement>('[data-grid-spacing="1"]')!
+    expect(container.querySelector('[data-grid-settings]')).not.toBeNull()
+    act(() => preset.click())
+    expect(useUiStore.getState().gridSize).toBe(1)
+    expect(JSON.parse(localStorage.getItem('tavotto.ui')!).gridSize).toBe(1)
+    expect(useDocumentStore.getState().doc).toBe(doc)
+    expect(useDocumentStore.getState().past).toBe(history)
+    expect(preset.getAttribute('aria-pressed')).toBe('true')
+  })
   it('宽、高与横竖交换在同一行', () => {
     const row = container.querySelector('[data-page-size-row]')!
     expect(row.querySelectorAll('input').length).toBe(2)

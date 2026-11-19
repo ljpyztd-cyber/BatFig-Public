@@ -9,6 +9,7 @@ import { previewStyle } from '@/store/svgPreviewStore'
 import type { PanelObject } from '@/types/document'
 import { useFieldGesture } from './elementWrite'
 import { propLabel } from './roles/registry'
+import { useColorPreview } from './useColorPreview'
 import {
   commonTextFields,
   currentOf,
@@ -42,6 +43,7 @@ export interface TextStyleAdapter {
   writeOnce: (prop: string, value: unknown) => void
   beginGesture: () => void
   endGesture: () => void
+  previewColor: (value: string | null) => void
   overrideStateOf: (prop: string) => OverrideState
   /** 恢复到脚本值：只清**这一组目标**上这条属性的 override */
   reset: (prop: string) => void
@@ -63,6 +65,7 @@ export function useTextStyleAdapter(
   props: readonly string[] = TEXT_STYLE_PROPS,
 ): TextStyleAdapter {
   const gesture = useFieldGesture(panel, defaultLabel(elements.length))
+  const preview = useColorPreview(panel, elements)
   const fields = useMemo(() => commonTextFields(elements, props), [elements, props])
   const count = elements.length
   // 以 pt 计的量**进出都是页面上的值**（`stylePresets.pagePtLens`）：控件看到的、校验的、
@@ -126,6 +129,7 @@ export function useTextStyleAdapter(
     },
     beginGesture: gesture.start,
     endGesture: gesture.end,
+    previewColor: (value) => preview('color', value),
     overrideStateOf: (prop) => overrideStateOf(panel, elements, prop),
     reset: (prop) => {
       const hit = elements.filter((e) =>

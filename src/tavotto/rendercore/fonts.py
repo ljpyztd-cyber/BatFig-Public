@@ -1,5 +1,8 @@
 """字体政策：批准字体的 allowlist、身份与注册表（统一实施包 U06，ADR 0060）。
 
+BatFig 的 Arial / Times New Roman 是 ADR 0060 登记的本机能力：`local_font_records` 验证用户安装的
+四张真实字体，不参与包内 allowlist，不复制或分发字体；以下原三条规则继续约束分发字体。
+
 ## 三条硬规则
 
 1. **只认 allowlist 里的字节。** `fonts_allowlist.json`（与本模块同目录，随包分发）
@@ -41,6 +44,7 @@ import struct
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from ..engine.fontpolicy import LOCAL_FONT_FAMILIES
 from .ir import FontResource
 
 ALLOWLIST_FILE = "fonts_allowlist.json"
@@ -52,14 +56,21 @@ FONT_ERROR_CODES = (
     "face_missing",  # 目录里没有这一族 / 这一样式的批准脸
     "allowlist_invalid",  # allowlist 文件本身不合形状
     "font_file_invalid",  # 字节在 allowlist 里，但 sfnt 表读不出来（截断 / 损坏）
+    "arial_missing",
+    "arial_invalid",
+    "arial_embedding_restricted",
+    "local_font_missing",
+    "local_font_invalid",
+    "local_font_embedding_restricted",
 )
 
 
 class FontsUnavailable(RuntimeError):
-    def __init__(self, code: str, message: str) -> None:
+    def __init__(self, code: str, message: str, params: dict | None = None) -> None:
         assert code in FONT_ERROR_CODES, code
         super().__init__(message)
         self.code = code
+        self.params = params or {}
 
 
 # ---------------------------------------------------------------------------
@@ -70,7 +81,7 @@ class ApprovedFace:
     face_id: str
     file: str  # 相对字体目录的路径
     sha256: str
-    family: str  # serif | sans-serif | monospace | cjk
+    family: str  # generic families / cjk / a strict user-installed family
     bold: bool
     italic: bool
     format: str  # truetype | cff-cid
@@ -185,6 +196,9 @@ class SfntInfo:
     tables: frozenset[str]
     cmap: dict[int, int]  # 码位 → GID（format 12 优先，其次 4）
     num_glyphs: int
+    bold: bool = False
+    italic: bool = False
+    embedding_flags: int = 0
 
 
 def _tables(data: bytes) -> dict[bytes, tuple[int, int]]:
@@ -263,10 +277,10 @@ def _cmap_table(data: bytes, coff: int) -> dict[int, int]:
     return best12 or best4
 
 
-def read_sfnt(path: Path) -> SfntInfo:
+def read_sfnt(path: Path, *, data: bytes | None = None) -> SfntInfo:
     """读注册表需要的那几张表。任何一张缺失 / 截断 → `ValueError`（调用方包成
     `font_file_invalid`）。"""
-    data = Path(path).read_bytes()
+    data = Path(path).read_bytes() if data is None else data
     tables = _tables(data)
     for need in (b"head", b"OS/2", b"name", b"cmap", b"maxp"):
         if need not in tables:
@@ -288,6 +302,9 @@ def read_sfnt(path: Path) -> SfntInfo:
         tables=frozenset(t.decode("latin-1") for t in tables),
         cmap=_cmap_table(data, tables[b"cmap"][0]),
         num_glyphs=num_glyphs,
+        bold=bool(struct.unpack_from(">H", data, ooff + 62)[0] & 0x20),
+        italic=bool(struct.unpack_from(">H", data, ooff + 62)[0] & 1),
+        embedding_flags=struct.unpack_from(">H", data, ooff + 8)[0],
     )
 
 
@@ -341,6 +358,98 @@ class FaceRecord:
 
     def covers(self, cp: int) -> bool:
         return cp in self.info.cmap
+
+
+ARIAL_ENV = LOCAL_FONT_FAMILIES["Arial"].env
+ARIAL_FACES = LOCAL_FONT_FAMILIES["Arial"].faces
+
+
+def local_arial_records() -> dict[str, FaceRecord]:
+    """Compatibility entry point for the original strict Arial contract."""
+    return local_font_records("Arial")
+
+
+def local_font_records(family: str) -> dict[str, FaceRecord]:
+    """Read a strict local family without copying or distributing fonts (ADR 0060).
+
+    All four styles must be usable. Font metadata is checked before accepting any face;
+    file names alone never establish family, style or embedding permission.
+    """
+    spec = LOCAL_FONT_FAMILIES[family]
+    explicit = os.environ.get(spec.env)
+
+    def failure(reason: str, message: str) -> FontsUnavailable:
+        return FontsUnavailable(f"{spec.error_prefix}_{reason}", message, {"family": family})
+
+    if explicit is not None:
+        root = Path(explicit) if explicit.strip() else None
+    elif os.name == "nt" and os.environ.get("SystemRoot"):
+        root = Path(os.environ["SystemRoot"]) / "Fonts"
+    else:
+        root = None
+    if root is None or not root.is_dir():
+        raise failure("missing", f"{family} 字体目录不可用；请安装真实字体或设置 {spec.env}。")
+    out: dict[str, FaceRecord] = {}
+    for filename, postscript, bold, italic in spec.faces:
+        path = root / filename
+        if not path.is_file():
+            raise failure("missing", f"{family} 缺少样式文件 {filename}；不会使用替代字体。")
+        try:
+            raw = path.read_bytes()
+            info = read_sfnt(path, data=raw)
+            digest = hashlib.sha256(raw).hexdigest()
+        except (OSError, ValueError, struct.error) as exc:
+            raise failure("invalid", f"{family} 文件 {filename} 无法读取。") from exc
+        if (
+            info.family_name != family
+            or info.postscript_name != postscript
+            or (info.bold, info.italic) != (bold, italic)
+            or font_kind(info.tables) != "truetype"
+        ):
+            raise failure(
+                "invalid",
+                f"{filename} 不是所需的真实 {family} 样式（{postscript}）；不会使用替代字体。",
+            )
+        # OS/2 fsType: Restricted License, No Subsetting, Bitmap Embedding Only.
+        if info.embedding_flags & (0x0002 | 0x0100 | 0x0200):
+            raise failure(
+                "embedding_restricted", f"{filename} 的字体嵌入标志不允许当前 PDF 子集嵌入。"
+            )
+        approved = ApprovedFace(
+            face_id=postscript,
+            file=filename,
+            sha256=digest,
+            family=family,
+            bold=bold,
+            italic=italic,
+            format="truetype",
+            license="local-user-font",
+            license_file="",
+            source={"kind": "local-installed-font"},
+            notice=f"User-installed {family}; never redistributed by BatFig.",
+        )
+        out[postscript] = FaceRecord(approved, path, info)
+    return out
+
+
+def arial_coverage(bold: bool = False, italic: bool = False):
+    return local_font_coverage("Arial", bold, italic)
+
+
+def local_font_coverage(family: str, bold: bool = False, italic: bool = False):
+    """Actual local face coverage, with no fallback; safe for standard-library callers."""
+    from ..glyphplan import Coverage
+
+    rec = next(
+        r
+        for r in local_font_records(family).values()
+        if (r.approved.bold, r.approved.italic) == (bool(bold), bool(italic))
+    )
+    return Coverage(
+        primary=lambda cp: cp in (9, 10, 13) or rec.covers(cp),
+        cjk=lambda cp: False,
+        fallback=lambda cp: False,
+    )
 
 
 @dataclass
@@ -405,6 +514,8 @@ class FontRegistry:
         return reg
 
     def record_for(self, family: str, bold: bool = False, italic: bool = False) -> FaceRecord:
+        if family in LOCAL_FONT_FAMILIES:
+            self.faces.update(local_font_records(family))
         for rec in self.faces.values():
             a = rec.approved
             if (a.family, a.bold, a.italic) == (family, bool(bold), bool(italic)):
@@ -431,7 +542,11 @@ class FontRegistry:
             "root": str(self.root),
             "faces": {
                 fid: {
-                    "file": str(rec.path.relative_to(self.root)),
+                    "file": (
+                        rec.path.name
+                        if rec.approved.family in LOCAL_FONT_FAMILIES
+                        else str(rec.path.relative_to(self.root))
+                    ),
                     "sha256": rec.approved.sha256,
                     "postscript_name": rec.info.postscript_name,
                     "units_per_em": rec.info.units_per_em,

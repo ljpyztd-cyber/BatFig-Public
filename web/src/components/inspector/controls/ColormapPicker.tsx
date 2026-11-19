@@ -5,6 +5,9 @@ import { t as translate } from '@/i18n'
 import type { ColormapFacts } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { Popover } from '../../ui/Popover'
+import { Button } from '@/components/ui/Button'
+import { customColormapGradient, isCustomColormap, type ColormapValue } from '@/lib/customColormap'
+import { CustomColormapEditor } from './CustomColormapEditor'
 import { colormapGradient } from './colormapStops'
 import { PickerTrigger } from './PickerTrigger'
 
@@ -92,10 +95,10 @@ export function ColormapPicker({
    * 当前值。**多选取值不一致时传 null**——那时一个格子都不该被标成选中，
    * 也不该把「空」当成一个自定义值塞进选项表。
    */
-  value: string | null
+  value: ColormapValue | null
   /** 写得进 override 的名字（引擎 `_cmap_options`）；当前值可以不在其中 */
   options: string[]
-  onChange: (v: string) => void
+  onChange: (v: ColormapValue) => void
   ariaLabel: string
   /** 当前值不在离线表里时它长什么样（manifest 的 `cmap_current`） */
   current?: ColormapFacts | null
@@ -105,10 +108,13 @@ export function ColormapPicker({
   onRestore?: () => void
 }) {
   const [open, setOpen] = useState(false)
+  const [editing, setEditing] = useState(false)
+  const diy = isCustomColormap(value) ? value : null
+  const nameValue = typeof value === 'string' ? value : null
   // 事实只对得上名字才作数：override 刚写下、渲染还没回来的那一拍，`value` 已经是
   // 新名字而 manifest 里的事实还是上一张的，拿它画渐变条就是把上一张的色标画到
   // 新名字头上（还会把 viridis 叫成「自定义」）
-  const current = currentFacts && currentFacts.name === value ? currentFacts : null
+  const current = currentFacts && currentFacts.name === nameValue ? currentFacts : null
   const entries: Entry[] = []
   if (original && onRestore) {
     entries.push({
@@ -124,12 +130,12 @@ export function ColormapPicker({
   // 摆出来是为了让用户看见「现在是这一张」，点它什么都不发生——从前这一格写出去
   // 的是 `cmap: "<自定义的名字>"`，引擎当场 ValueError。同名的那格选项照常列在
   // 下面、不标选中：选它 = 换成注册表里真正的那张。
-  const custom = Boolean(value && (!options.includes(value) || current?.custom))
-  if (value && custom) {
-    entries.push({ key: '__current', name: value, facts: current, active: true, action: 'keep' })
+  const custom = Boolean(nameValue && (!options.includes(nameValue) || current?.custom))
+  if (nameValue && custom) {
+    entries.push({ key: '__current', name: nameValue, facts: current, active: true, action: 'keep' })
   }
   for (const name of options) {
-    const active = name === value && !custom
+    const active = name === nameValue && !custom
     entries.push({
       key: name,
       name,
@@ -141,6 +147,7 @@ export function ColormapPicker({
   const originalTag = translate('control.scriptOriginal', { ns: 'inspector' })
 
   return (
+    <>
     <Popover
       // 弹层宽 = 触发器宽（打磨 E11）：上下相邻的「线型」「标记」此前一个 216、
       // 一个 228，两种宽度挨在一起；Select 的弹层一直是跟着触发器的
@@ -152,14 +159,16 @@ export function ColormapPicker({
         <PickerTrigger
           ariaLabel={ariaLabel}
           mixed={value === null}
-          mono={!current?.custom}
-          data-cmap-custom={current?.custom ? 'true' : undefined}
-          textTitle={value !== null && current?.custom ? value : undefined}
+          mono={!current?.custom && !diy}
+          data-cmap-custom={current?.custom || diy ? 'true' : undefined}
+          textTitle={nameValue !== null && current?.custom ? nameValue : undefined}
           preview={
-            value !== null && <GradientBar name={value} facts={current} className="w-12 shrink-0" />
+            diy ? <span aria-hidden data-cmap-gradient="smooth" className="h-3.5 w-12 shrink-0 rounded-xs border border-border"
+              style={{ background: customColormapGradient(diy) }} />
+              : nameValue !== null && <GradientBar name={nameValue} facts={current} className="w-12 shrink-0" />
           }
         >
-          {value !== null && displayName(value, current)}
+          {diy ? translate('control.diyName', { ns: 'inspector' }) : nameValue !== null && displayName(nameValue, current)}
         </PickerTrigger>
       }
     >
@@ -214,6 +223,15 @@ export function ColormapPicker({
           )
         })}
       </div>
+      <Button className="mt-2 w-full" variant="secondary" data-cmap-diy onClick={() => {
+        setOpen(false)
+        setEditing(true)
+      }}>{translate('control.diyTitle', { ns: 'inspector' })}</Button>
     </Popover>
+    {editing && <CustomColormapEditor value={value} onClose={() => setEditing(false)} onApply={(next) => {
+      onChange(next)
+      setEditing(false)
+    }} />}
+    </>
   )
 }

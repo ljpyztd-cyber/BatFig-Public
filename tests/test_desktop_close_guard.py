@@ -121,13 +121,5 @@ def test_only_one_place_in_the_shell_can_stop_a_window_from_closing():
     assert "hold_window(" in handler, "窗口事件处理器没有走 hold_window 这唯一入口"
 
 
-def test_the_close_guard_reuses_the_one_unsaved_predicate():
-    """「有没有未落盘的工作」全产品只有一份判据（ADR 0024 的关闭保护）。
-
-    在这里另写一份的表现是**刷新会拦、关窗不拦**（或者反过来），而两侧的单测
-    各自都绿——因为它们各自问的是自己那一份。
-    """
-    src = CLOSE_GUARD_TS.read_text(encoding="utf-8")
-    assert re.search(
-        r"import \{[^}]*\bhasUnsavedWork\b[^}]*\} from '@/store/documentStore'", src
-    ), "closeGuard.ts 没有从 documentStore 取那份唯一的判据"
+# The shared pending-content predicate is checked with TypeScript ASTs in
+# web/src/lib/closeGuardSource.test.ts, beside its behavioral close/unload tests.

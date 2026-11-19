@@ -30,12 +30,14 @@ from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
 
 from .. import glyphplan, richtext
+from ..engine.fontpolicy import LOCAL_FONT_FAMILIES
 from .ir import FontResource, Glyph, mm2pt
 
 #: 画布文字能选的字体族。**闭集，顺序即默认序**——与 `web/src/lib/typography.ts` 的
 #: `CANVAS_TEXT_FAMILIES` 和旧 facade 同名常量逐字相同（`test_typography_families.py` 钉着
-#: 闭集 + 顺序）。它是一句能力承诺：三个族 × 四态由批准字体集合（ADR 0060）兑现。
-CANVAS_TEXT_FAMILIES = ("serif", "sans-serif", "monospace")
+#: 闭集 + 顺序）。三个通用族由批准集合兑现；具名族由本机四张真实脸兑现（ADR 0060）。
+CANVAS_TEXT_FAMILIES = ("serif", "sans-serif", "monospace", *LOCAL_FONT_FAMILIES)
+GENERIC_TEXT_FAMILIES = CANVAS_TEXT_FAMILIES[:3]
 CANVAS_TEXT_DEFAULT_FAMILY = CANVAS_TEXT_FAMILIES[0]
 
 #: 覆盖表枚举到哪（与旧 facade 同一个数：BMP + SMP）。
@@ -90,7 +92,8 @@ class FaceProvider(Protocol):
 
 def faces_for(provider: FaceProvider, family: object, bold: bool, italic: bool) -> FaceSet:
     return FaceSet(
-        provider.face_for(latin_family(family), bool(bold), bool(italic)), provider.cjk_face()
+        provider.face_for(latin_family(family), bool(bold), bool(italic)),
+        None if family in LOCAL_FONT_FAMILIES else provider.cjk_face(),
     )
 
 
@@ -101,7 +104,11 @@ def coverage(faces: FaceSet) -> glyphplan.Coverage:
     """三层 oracle。**fallback 恒 False**（本轮没有隐式回退脸）。"""
     cjk = faces.cjk
     return glyphplan.Coverage(
-        primary=faces.primary.covers,
+        primary=(
+            (lambda cp: cp in (9, 10, 13) or faces.primary.covers(cp))
+            if faces.primary.resource.family in LOCAL_FONT_FAMILIES
+            else faces.primary.covers
+        ),
         cjk=(cjk.covers if cjk is not None else (lambda cp: False)),
         fallback=lambda cp: False,
     )
@@ -318,6 +325,8 @@ def layout_text(t: dict, faces: FaceSet) -> TextBlock | None:
     """画布文字对象（`text` / `size_pt` / `x_mm` … 与旧 facade 同一份字段）→ 已排版的块。
     空白文字回 None（什么都不画）。"""
     text = t.get("text", "")
+    if faces.primary.resource.family in LOCAL_FONT_FAMILIES:
+        text = local_font_layout_text(text)
     if not text.strip():
         return None
     size = float(t.get("size_pt", 9))
@@ -380,3 +389,8 @@ def layout_text(t: dict, faces: FaceSet) -> TextBlock | None:
         missing=tuple(missing),
         cjk_chars=cjk_chars,
     )
+
+
+def local_font_layout_text(text: str) -> str:
+    """Formatting controls are layout instructions, never glyphs or fallback faces."""
+    return text.replace("\r\n", "\n").replace("\r", "\n").replace("\t", "    ")

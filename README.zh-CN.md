@@ -1,3 +1,14 @@
+# BatFig
+
+[English](README.md) · [从源码启动](BATFIG.md)
+
+BatFig 是面向电池与材料研究的本地 Matplotlib 图表编辑器。可以从 CSV 导入曲线，在画布上编辑图内对象，按坐标轴对齐多张小图，并导出矢量 PDF 或 PNG。成品中的轴标题和刻度默认 8 pt，面板编号默认 Arial 20 pt 常规。
+
+BatFig 是基于 [Tavotto v0.17.0](https://github.com/Tavotto/Tavotto/tree/v0.17.0) 的独立衍生项目。BatFig 的修改完成于 2026 年 10 月，代码按 [AGPL-3.0-only](LICENSE) 分发，保留上游版权与[商标声明](TRADEMARKS.md)。
+
+<details>
+<summary>上游 Tavotto 文档</summary>
+
 <p align="center">
   <img src="https://raw.githubusercontent.com/Tavotto/Tavotto/main/assets/readme/hero.svg" width="100%"
        alt="Tavotto —— matplotlib 与 AI 生成科研图的可视化编辑器。在画布上改图，脚本一行不动。">
@@ -557,3 +568,5 @@ Tavotto 的著作权人可以提供另行授权的版本。
 ---
 
 如果 Tavotto 帮你在下一张图上省了一个下午，欢迎给仓库点个 star。
+
+</details>

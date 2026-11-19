@@ -3,7 +3,12 @@
  * 只影响**选项文字自身的显示字体**（Aa 预览），写入引擎的值仍是原始选项串；
  * 引擎侧的真实字体解析归 matplotlib，两边不承诺像素等价。
  */
+import { isExactTextFamily } from '@/lib/typography'
+
 export function fontStackOf(option: string): string {
+  // A browser fallback is not a font sample. These names are UI labels; their
+  // actual glyphs are verified and displayed by the backend preview.
+  if (isExactTextFamily(option)) return 'var(--font-sans)'
   switch (option) {
     case 'serif':
       return 'Georgia, "Times New Roman", serif'

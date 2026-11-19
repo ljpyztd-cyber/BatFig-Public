@@ -9,7 +9,7 @@
     "ai_agent_probe_timeout": "验证 {{path}} 超时。可以再试，原设置不变。",
     "ai_agent_unknown": "无法识别该编码 Agent：{{agent}}。",
     "ai_revert_conflict": "{{script}} 在这次 AI 修改之后又改过，回滚会覆盖后来的改动，已取消。",
-    "ai_revert_failed":"无法撤销 AI 修改：{{reason}}",
+    "ai_revert_failed": "无法撤销 AI 修改：{{reason}}",
     "ai_start_failed": "无法启动 AI 任务：{{reason}}",
     "annotations_need_pdf": "该素材没有矢量 PDF，标注暂时无法写回原图。",
     "artifact_rejected": "导出文件没有通过 {{policy}} 检查（{{failed}}），未发布到导出目录。",
@@ -192,7 +192,28 @@
     "write_back_persist_failed": "无法写回：备份或新文件没能写入磁盘（{{reason}}）。原文件未做任何改动，请检查磁盘空间与目录权限后重试。",
     "write_back_warnings": "无法写回：重放时出现了警告。",
     "write_failed": "无法写入磁盘。本机副本仍在，可重试：{{reason}}",
-    "pinned_full": "收藏最多 {{max}} 个。先取消收藏几个再加。"
+    "pinned_full": "收藏最多 {{max}} 个。先取消收藏几个再加。",
+    "arial_missing": "找不到真正的 Arial 字体，请安装后重启服务。",
+    "arial_invalid": "所提供字体不是真正的 Arial，或字重不匹配。",
+    "arial_embedding_restricted": "此 Arial 字体的许可标志禁止嵌入，无法导出。",
+    "glyph_missing": "{{family}} 缺少所需字形：{{chars}}。请修改文本；不会替换字体。",
+    "text_preview_invalid": "画布文字预览参数无效。",
+    "csv_empty": "CSV 导入失败：{{detail}}",
+    "csv_too_large": "CSV 导入失败：{{detail}}",
+    "csv_encoding": "CSV 导入失败：{{detail}}",
+    "csv_invalid": "CSV 导入失败：{{detail}}",
+    "csv_columns": "CSV 导入失败：{{detail}}",
+    "csv_headers": "CSV 导入失败：{{detail}}",
+    "csv_row_width": "CSV 导入失败：{{detail}}",
+    "csv_too_many_rows": "CSV 导入失败：{{detail}}",
+    "csv_no_data": "CSV 导入失败：{{detail}}",
+    "csv_mapping": "CSV 导入失败：{{detail}}",
+    "csv_non_numeric": "CSV 导入失败：{{detail}}",
+    "csv_label": "CSV 导入失败：{{detail}}",
+    "csv_directory": "CSV 导入失败：{{detail}}",
+    "local_font_missing": "找不到真正的 {{family}} 字体，请安装后重启服务。",
+    "local_font_invalid": "所提供字体不是真正的 {{family}}，或字重、字形不匹配。",
+    "local_font_embedding_restricted": "此 {{family}} 字体的许可标志禁止嵌入，无法导出。"
   },
   "engine": {
     "apply": "应用",
@@ -476,7 +497,8 @@
     "textWeightPolicy": "规范建议 {{role}} 的字重为 {{want}}，当前 {{got}}。",
     "tickDirection": "刻度朝向为 {{got}}，规范要求 {{want}}",
     "tickLabelCount": "{{axis}} 有 {{count}} 个刻度标签，规范建议不超过 {{max}} 个。",
-    "unappliedOverride": "这张图有 {{count}} 条图内修改还没应用到渲染，成图会与画布不一致。"
+    "unappliedOverride": "这张图有 {{count}} 条图内修改还没应用到渲染，成图会与画布不一致。",
+    "canvasFontUnavailable": "本机 {{family}} 字体或所选字重不可用；无法核验预览和导出，不会替换字体。"
   },
   "problems": {
     "ariaLocate": "定位到这个对象",

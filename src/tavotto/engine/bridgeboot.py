@@ -80,6 +80,7 @@ PRIVATE_PKG = "tavotto_bridge_runtime"
 #: `figcapture` / `patchspec` 是纯标准库；其余三个要 matplotlib/numpy，
 #: 所以它们**只在捕获之后**才装（见 `bridge_runner` 的两阶段装载）。
 ENGINE_SIBLINGS = (
+    "fontpolicy",
     "figcapture",
     "patchspec",
     "pathgeom",

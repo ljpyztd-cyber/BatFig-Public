@@ -1,5 +1,6 @@
 import type { CSSProperties } from 'react'
 import type { ColormapFacts } from '@/lib/api'
+import type { ColormapValue } from '@/lib/customColormap'
 import { optionLabel } from '../roles/registry'
 import { colormapGradient, gradientOfStops } from './colormapStops'
 import { OptionGrid, type GridOption } from './OptionGrid'
@@ -40,7 +41,7 @@ const FALLBACK_STOPS = ['#d9d9d9', '#404040']
 
 /** vmin → vmax：竖直色条从下往上，水平的从左往右（与 matplotlib 同向） */
 export function colorbarPreviewStyle(
-  cmap: string,
+  cmap: ColormapValue,
   orientation: Orientation,
   extend: Extend,
   facts?: ColormapFacts | null,
@@ -58,7 +59,7 @@ function BarPreview({
   orientation,
   extend,
 }: {
-  cmap: string
+  cmap: ColormapValue
   facts?: ColormapFacts | null
   orientation: Orientation
   extend: Extend
@@ -90,7 +91,7 @@ export function ColorbarOrientationPicker({
   onChange: (v: string) => void
   ariaLabel: string
   /** 当前色图名：预览用它的渐变 */
-  cmap: string
+  cmap: ColormapValue
   /** 当前色图不在离线表里时它长什么样（同一元素 `cmap` 字段的 `cmap_current`） */
   cmapFacts?: ColormapFacts | null
 }) {
@@ -128,7 +129,7 @@ export function ColorbarExtendPicker({
   options: string[]
   onChange: (v: string) => void
   ariaLabel: string
-  cmap: string
+  cmap: ColormapValue
   cmapFacts?: ColormapFacts | null
   /**
    * 色条此刻的方向：预览要跟它画成一个样子。收 string 而不是收窄类型——

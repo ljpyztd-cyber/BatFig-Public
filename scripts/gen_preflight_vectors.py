@@ -405,6 +405,27 @@ def cases() -> list[dict]:
         }
     )
 
+    # DIY colors remain an unassessed palette, never silently count as recommended.
+    m = _clean_manifest()
+    m["elements"].append(
+        _el(
+            "axes_0.images_0",
+            "image",
+            cmap={
+                "type": "custom",
+                "colors": ["#103a71", "#ffffff", "#bd0026"],
+                "positions": [0, 0.5, 1],
+            },
+        )
+    )
+    out.append(
+        {
+            "name": "diy-colormap-retains-semantic-suggestion",
+            "profile_id": "lab-publication-v1",
+            "spec": _spec([_panel("p1", manifest=m)]),
+        }
+    )
+
     # 12b. 两条曲线都没有 marker，但线型一实一虚：本来就分得开，marker 那条建议
     #      **不响**（教程 Fig1 就是这种图；上一条里两条线共用默认线型才响）。
     #      三条线里两条共用线型 → 仍响：判据是「线型有重复」，不是「有两种线型」

@@ -411,6 +411,25 @@ describe('image', () => {
 /* ------------------------------ 反复改与还原 ------------------------------- */
 
 describe('连续改十次（拖滑块）', () => {
+  it('dense collections record each node once even when both fill and stroke change', () => {
+    const group = document.createElementNS('http://www.w3.org/2000/svg', 'g')
+    for (let i = 0; i < 1000; i++) {
+      const path = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+      path.setAttribute('style', 'fill: #112233; stroke: #445566')
+      group.appendChild(path)
+    }
+    const original = group.outerHTML
+    const edits = applyStyleEdit(group, 'strokeFill', '#aabbcc', ctx)
+    expect(edits).toHaveLength(1000)
+    expect(new Set(edits.map((edit) => edit.el)).size).toBe(1000)
+    expect(Array.from(group.children).every((child) =>
+      (child as SVGElement).style.fill === 'rgb(170, 187, 204)' &&
+      (child as SVGElement).style.stroke === 'rgb(170, 187, 204)',
+    )).toBe(true)
+    restoreStyleEdits(edits)
+    expect(group.outerHTML).toBe(original)
+  })
+
   it('base 只记第一次：还原回到最初，而不是某个中间值', () => {
     const el = node('axes_0.lines_0')
     const edits: StyleEdit[] = []

@@ -11,6 +11,58 @@ async function freshStore() {
 
 const LS_KEY = 'tavotto.ui'
 
+describe('grid visibility v3 migration', () => {
+  beforeEach(() => localStorage.clear())
+
+  it('enables the grid once for v2 preferences without resetting other choices', async () => {
+    localStorage.setItem(LS_KEY, JSON.stringify({
+      prefsVersion: 2, showGrid: false, gridSize: 0.75, rightWidth: 420,
+      rightOpen: false, rightPinned: false, snapEnabled: false, snapToGuides: false,
+    }))
+    const state = await freshStore()
+    expect(state).toMatchObject({
+      prefsVersion: 3, showGrid: true, gridSize: 0.75, rightWidth: 420,
+      rightOpen: false, rightPinned: false, snapEnabled: false, snapToGuides: false,
+    })
+    state.setCanvasPref({ showGrid: false })
+    expect((await freshStore()).showGrid).toBe(false)
+    expect(JSON.parse(localStorage.getItem(LS_KEY)!).prefsVersion).toBe(3)
+  })
+
+  it('keeps a v3 user choice disabled on reload', async () => {
+    localStorage.setItem(LS_KEY, JSON.stringify({ prefsVersion: 3, showGrid: false }))
+    expect((await freshStore()).showGrid).toBe(false)
+  })
+
+  it('enables the grid for new and unversioned preferences', async () => {
+    expect((await freshStore()).showGrid).toBe(true)
+    localStorage.setItem(LS_KEY, JSON.stringify({ showGrid: false, gridSize: 1 }))
+    expect(await freshStore()).toMatchObject({ showGrid: true, gridSize: 1 })
+  })
+})
+
+describe('grid spacing', () => {
+  beforeEach(() => localStorage.clear())
+  it('defaults to 2 mm, preserving an existing user spacing across reload', async () => {
+    expect((await freshStore()).gridSize).toBe(2)
+    const s = await freshStore()
+    s.setCanvasPref({ gridSize: 0.75 })
+    expect((await freshStore()).gridSize).toBe(0.75)
+  })
+  it('bounds invalid persisted and edited values, without changing grid visibility', async () => {
+    localStorage.setItem(LS_KEY, JSON.stringify({ prefsVersion: 3, gridSize: null, showGrid: false }))
+    const s = await freshStore()
+    expect(s.gridSize).toBe(2)
+    expect(s.showGrid).toBe(false)
+    s.setCanvasPref({ gridSize: -100 })
+    expect(JSON.parse(localStorage.getItem(LS_KEY)!).gridSize).toBe(0.5)
+    s.setCanvasPref({ gridSize: 500 })
+    expect(JSON.parse(localStorage.getItem(LS_KEY)!).gridSize).toBe(50)
+    s.setCanvasPref({ gridSize: Number.NaN })
+    expect(JSON.parse(localStorage.getItem(LS_KEY)!).gridSize).toBe(2)
+  })
+})
+
 describe('右栏默认常驻', () => {
   beforeEach(() => {
     localStorage.clear()
@@ -44,7 +96,7 @@ describe('右栏默认常驻', () => {
     const s = await freshStore()
     s.toggleRight()
     const saved = JSON.parse(localStorage.getItem(LS_KEY) ?? '{}')
-    expect(saved.prefsVersion).toBe(2)
+    expect(saved.prefsVersion).toBe(3)
     expect(saved.rightOpen).toBe(false)
   })
 

@@ -4,6 +4,7 @@
  * 重置先确认、忘掉本机那格 autosave。
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { requestLeaveDocument } from '@/lib/closeGuard'
 import type { PanelInfo, TutorialMetadata } from '@/lib/api'
 import type { PanelObject } from '@/types/document'
 import { setTelemetryEnabled } from '@/lib/telemetry'
@@ -21,10 +22,13 @@ import { emptyProject } from '@/types/document'
 import {
   loadTutorialStatus,
   resetTutorial,
+  runTutorialEntry,
   startTutorial,
   tutorialEntry,
   useTutorialStore,
 } from './tutorial'
+
+vi.mock('@/lib/closeGuard', () => ({ requestLeaveDocument: vi.fn(async () => true) }))
 
 const META: TutorialMetadata = {
   schema: 1,
@@ -97,6 +101,7 @@ function stubFetch(over: Record<string, () => Response> = {}) {
 }
 
 beforeEach(async () => {
+  vi.mocked(requestLeaveDocument).mockReset().mockResolvedValue(true)
   localStorage.clear()
   configureOnboardingPersistence(null)
   useOnboardingStore.getState().resetOnboarding()
@@ -114,6 +119,48 @@ beforeEach(async () => {
 afterEach(() => {
   vi.restoreAllMocks()
   setTelemetryEnabled(false)
+})
+
+it('取消离开当前项目时不请求教程、不改进度、不记录失败', async () => {
+  vi.mocked(requestLeaveDocument).mockResolvedValue(false)
+  const before = useDocumentStore.getState().doc
+  const progress = useOnboardingStore.getState().status
+  const status = useUiStore.getState().status
+  expect(await runTutorialEntry('help')).toMatchObject({ ok: false, reason: 'cancelled' })
+  expect(calls.some((call) => call.url === '/api/tutorial/open')).toBe(false)
+  expect(useDocumentStore.getState().doc).toBe(before)
+  expect(useOnboardingStore.getState().status).toBe(progress)
+  expect(useTutorialStore.getState().failure).toBeNull()
+  expect(useTutorialStore.getState().busy).toBeNull()
+  expect(useUiStore.getState().status).toBe(status)
+})
+
+it('教程打开请求在途时又编辑：不装旧回包、不启动教程、不报取消错误', async () => {
+  let release!: () => void
+  let requested = false
+  const slow = new Promise<void>((resolve) => { release = resolve })
+  const realFetch = globalThis.fetch
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (new URL(String(input), 'http://x').pathname === '/api/tutorial/open') {
+      requested = true
+      await slow
+    }
+    return realFetch(input, init)
+  }) as typeof fetch
+  const result = runTutorialEntry('help')
+  await vi.waitFor(() => expect(requested).toBe(true))
+  useDocumentStore.getState().commit({ key: 'literal', ns: 'common', values: { text: 'later edit' } }, (doc) => {
+    doc.guides.push({ axis: 'y', pos: 20 })
+  })
+  const edited = useDocumentStore.getState().doc
+  const status = useUiStore.getState().status
+  release()
+  expect(await result).toMatchObject({ ok: false, reason: 'cancelled' })
+  expect(useDocumentStore.getState().doc).toBe(edited)
+  expect(useDocumentStore.getState().documentId).toBe('d_before')
+  expect(useTutorialStore.getState().failure).toBeNull()
+  expect(useTutorialStore.getState().busy).toBeNull()
+  expect(useUiStore.getState().status).toBe(status)
 })
 
 describe('tutorial_started 遥测（ADR 0041）', () => {
@@ -395,6 +442,20 @@ describe('教程文档带着恢复副本（#643 评审：待裁决事项不许�
 })
 
 describe('resetTutorial', () => {
+  it('已确认重置后取消离开保护：不发重置请求、不暂停自动保存', async () => {
+    await startTutorial()
+    vi.mocked(requestLeaveDocument).mockResolvedValue(false)
+    const before = useDocumentStore.getState().doc
+    const result = resetTutorial()
+    await vi.waitFor(() => expect(useUiStore.getState().confirm).not.toBeNull())
+    useUiStore.getState().confirm!.resolve(true)
+    expect(await result).toMatchObject({ ok: false, reason: 'cancelled' })
+    expect(calls.some((call) => call.url === '/api/tutorial/reset')).toBe(false)
+    expect(useDocumentStore.getState().doc).toBe(before)
+    expect(isAutosaveSuspendedFor(META.document_id)).toBe(false)
+    expect(useTutorialStore.getState().failure).toBeNull()
+  })
+
   it('先确认（列出另存的画布）；取消什么都不发', async () => {
     await startTutorial()
     const p = resetTutorial()

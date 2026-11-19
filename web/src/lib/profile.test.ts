@@ -19,9 +19,9 @@ import { readExportDefaults, writeExportDefaults } from './exportDefaults'
 import { migrateToProject, type FigureDocument } from '@/types/document'
 
 describe('规范文件', () => {
-  it('默认 profile 就是课题组那套，硬数字与 Python 侧同源', () => {
-    expect(DEFAULT_PROFILE_ID).toBe('lab-publication-v1')
-    const p = loadProfile()
+  it('保留上游课题组规范，硬数字与 Python 侧同源', () => {
+    expect(hasProfile('lab-publication-v1')).toBe(true)
+    const p = loadProfile('lab-publication-v1')
     expect(p.widths_mm.single).toBe(80)
     expect(p.widths_mm.double).toBe(150)
     expect(p.default_font_size_pt).toBe(9)
@@ -56,7 +56,7 @@ describe('journal 覆盖', () => {
   })
 
   it('覆盖后 178mm 算双栏了', () => {
-    expect(columnOf(loadProfile(), 178)).toBeNull()
+    expect(columnOf(loadProfile('lab-publication-v1'), 178)).toBeNull()
     expect(columnOf(loadProfile('lab-publication-v1', { widths_mm: { double: 178 } }), 178)).toBe(
       'double',
     )
@@ -64,7 +64,7 @@ describe('journal 覆盖', () => {
 
   it('不改原始 profile（同一份文档被多个组件读）', () => {
     loadProfile('lab-publication-v1', { widths_mm: { double: 178 } })
-    expect(loadProfile().widths_mm.double).toBe(150)
+    expect(loadProfile('lab-publication-v1').widths_mm.double).toBe(150)
   })
 })
 
@@ -106,7 +106,7 @@ describe('旧文档兼容', () => {
 
 describe('等级', () => {
   it('没登记的检查项按 warn 兜底，绝不静默降成 suggestion', () => {
-    const p = loadProfile()
+    const p = loadProfile('lab-publication-v1')
     expect(severityOf(p, 'brand-new-check-nobody-registered')).toBe('warn')
     expect(severityOf(p, 'font-too-small')).toBe('error')
     expect(severityOf(p, 'raster-text-not-verifiable')).toBe('not_verifiable')

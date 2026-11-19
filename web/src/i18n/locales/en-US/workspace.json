@@ -702,7 +702,8 @@
     "undone": "Undone: {{label}}",
     "panelRebuilt": "Rebuilt from the source script",
     "panelRerenderedNoRerun": "Re-rendered with the current edits; the source script was not re-run",
-    "rebuildFailed": "Couldn’t rebuild. {{error}}"
+    "rebuildFailed": "Couldn’t rebuild. {{error}}",
+    "alignAxesSyncing": "Axes layout is not ready. Read axes and retry, or switch to image bounds."
   },
   "tabs": {
     "allCanvases": "All canvases",
@@ -774,7 +775,9 @@
     "versionTimeline": "Document versions…",
     "zoomIn": "Zoom in",
     "zoomOut": "Zoom out",
-    "zoomValue": "Zoom {{percent}}%"
+    "zoomValue": "Zoom {{percent}}%",
+    "saveTip": "Save this document to disk",
+    "saveNotYet": "Not saved yet"
   },
   "update": {
     "banner": "Tavotto has been updated. Reload to use the new version.",
@@ -787,5 +790,19 @@
     "fast_edit_entered": "Your changes are saved to this Tavotto document. The original file stays untouched.",
     "multi_select": "Use the floating bar by the selection to align and distribute.",
     "problem_found": "“Problems” on the left locates the object and its property field."
+  },
+  "csvImport": {
+    "open": "Import CSV curves",
+    "title": "Create curves from CSV",
+    "description": "UTF-8 comma-separated data with a header row. Select numeric columns; original data and column mapping are preserved in this project.",
+    "file": "CSV file",
+    "rows_one": "Read {{count}} data row",
+    "rows_other": "Read {{count}} data rows",
+    "x": "X column",
+    "ys": "Y columns",
+    "xLabel": "X axis label and unit",
+    "yLabel": "Y axis label and unit",
+    "hash": "Original data SHA-256: {{hash}}",
+    "create": "Create and add to canvas"
   }
 }

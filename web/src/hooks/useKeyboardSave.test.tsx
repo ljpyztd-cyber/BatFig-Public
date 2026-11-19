@@ -63,16 +63,31 @@ describe('⌘S 绑定', () => {
 
   it('焦点在输入框里也照存——那正是用户最想按它的时刻', async () => {
     const input = host.querySelector('input')!
+    // Real NumberField and inline name editors stop bubbling their keys.
+    input.addEventListener('keydown', (event) => event.stopPropagation())
     input.focus()
     const ev = press(input, { key: 's', metaKey: true })
     expect(runManualSave).toHaveBeenCalledTimes(1)
     expect(ev.defaultPrevented).toBe(true)
   })
 
+  it('对话框的草稿归对话框管理，同时阻止浏览器另存网页', () => {
+    const dialog = document.createElement('div')
+    dialog.setAttribute('role', 'dialog')
+    const input = document.createElement('input')
+    dialog.appendChild(input)
+    host.appendChild(dialog)
+    const ev = press(input, { key: 's', ctrlKey: true })
+    expect(ev.defaultPrevented).toBe(true)
+    expect(runManualSave).not.toHaveBeenCalled()
+  })
+
   it('⇧⌘S 是「另存为」：开命名画布对话框，不走保存', async () => {
+    useUiStore.setState({ layoutIntent: 'load' })
     press(window, { key: 's', metaKey: true, shiftKey: true })
     expect(runManualSave).not.toHaveBeenCalled()
     expect(useUiStore.getState().layoutOpen).toBe(true)
+    expect(useUiStore.getState().layoutIntent).toBe('save')
   })
 
   it('没按修饰键的 s 什么都不做', async () => {

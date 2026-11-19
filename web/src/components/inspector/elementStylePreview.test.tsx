@@ -5,8 +5,7 @@
  *   1. 支持预览的字段（线条颜色/线宽、文字颜色、柱形填充、alpha、显隐）在
  *      改动那一刻就写进 SVG，整轮调整**一次后端都不发**；
  *   2. 不支持的字段（fontsize / linestyle / 字体…）原路走后端，SVG 一个字节不动；
- *   3. 一次连续调整 = 一条历史（gesture），granular 模式下每个变化各一条，
- *      但**两种模式下后端渲染都推迟到手势结束**；
+ *   3. 取色连续样本只进预览平面，两种历史模式都在完成取色时写入一次；
  *   4. 两个独立控件的操作绝不被合并成一条历史。
  */
 import { literal } from '@/i18n'
@@ -236,6 +235,13 @@ function typeInto(el: HTMLInputElement, value: string) {
   el.dispatchEvent(new Event('input', { bubbles: true }))
 }
 
+async function flushColorPreview() {
+  await act(async () => {
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+    flushPreviewFrame()
+  })
+}
+
 const svgNode = (gid: string) =>
   document.querySelector(`[data-element-svg="p1"] [id="${gid}"]`) as SVGElement
 
@@ -285,6 +291,65 @@ afterEach(async () => {
 /* ============================ 支持预览的字段 ============================== */
 
 describe('线条颜色：改的那一刻 SVG 就变，后端等到手势结束', () => {
+  it('100 samples only preview; native completion writes the document once and undo restores the original', async () => {
+    await mount('axes_0.lines_0')
+    const input = colorInput('颜色')
+    let docWrites = 0
+    const unsubscribe = useDocumentStore.subscribe((state, before) => {
+      if (state.doc !== before.doc) docWrites++
+    })
+    await act(async () => {
+      for (let i = 0; i < 100; i++) typeInto(input, `#00aa${i.toString(16).padStart(2, '0')}`)
+    })
+    await flushColorPreview()
+    expect(styleOf('axes_0.lines_0', 'path', 'stroke')).toBe(css('#00aa63'))
+    expect(docWrites).toBe(0)
+    expect(engineRender).not.toHaveBeenCalled()
+    await act(async () => input.dispatchEvent(new Event('change', { bubbles: true })))
+    unsubscribe()
+    expect(docWrites).toBe(1)
+    expect(engineRender).toHaveBeenCalledTimes(1)
+    expect(useDocumentStore.getState().past).toHaveLength(1)
+    expect(overrideOf('axes_0.lines_0', 'color')).toBe('#00aa63')
+    await act(async () => useDocumentStore.getState().undo())
+    expect(overrideOf('axes_0.lines_0', 'color')).toBeUndefined()
+  })
+
+  it('Escape restores the exact SVG and leaves document, history, and engine untouched', async () => {
+    await mount('axes_0.lines_0')
+    const svg = document.querySelector('[data-element-svg="p1"] svg')!
+    const before = svg.outerHTML
+    const doc = useDocumentStore.getState().doc
+    const input = colorInput('颜色')
+    await act(async () => typeInto(input, '#abcdef'))
+    await flushColorPreview()
+    expect(svg.outerHTML).not.toBe(before)
+    await act(async () => input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+    expect(svg.outerHTML).toBe(before)
+    expect(useDocumentStore.getState().doc).toBe(doc)
+    expect(useDocumentStore.getState().past).toHaveLength(0)
+    expect(engineRender).not.toHaveBeenCalled()
+  })
+
+  it('cancelling a second draft keeps the previous committed preview while its replacement SVG is pending', async () => {
+    await mount('axes_0.lines_0')
+    const input = colorInput('颜色')
+    await act(async () => {
+      typeInto(input, '#aa0000')
+      input.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    flushPreviewFrame()
+    const shown = document.querySelector('[data-element-svg="p1"] svg')!.outerHTML
+    expect(styleOf('axes_0.lines_0', 'path', 'stroke')).toBe(css('#aa0000'))
+    await act(async () => typeInto(input, '#0000aa'))
+    await flushColorPreview()
+    await act(async () => input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+    expect(document.querySelector('[data-element-svg="p1"] svg')!.outerHTML).toBe(shown)
+    expect(overrideOf('axes_0.lines_0', 'color')).toBe('#aa0000')
+    expect(useDocumentStore.getState().past).toHaveLength(1)
+    expect(engineRender).toHaveBeenCalledTimes(1)
+  })
+
   it('取色过程中一次 engineRender 都没有，SVG 却已经是新颜色', async () => {
     await mount('axes_0.lines_0')
     const input = colorInput('颜色')
@@ -292,12 +357,13 @@ describe('线条颜色：改的那一刻 SVG 就变，后端等到手势结束',
       await act(async () => {
         typeInto(input, v)
       })
-      flushPreviewFrame()
+      await flushColorPreview()
     }
     expect(engineRender).not.toHaveBeenCalled()
     expect(styleOf('axes_0.lines_0', 'path', 'stroke')).toBe(css('#0000ff'))
-    // 文档里也已经是最后那个值（历史平面照常记账）
-    expect(overrideOf('axes_0.lines_0', 'color')).toBe('#0000ff')
+    // Continuous native samples only touch the preview plane.
+    expect(overrideOf('axes_0.lines_0', 'color')).toBeUndefined()
+    expect(useDocumentStore.getState().past).toHaveLength(0)
   })
 
   it('失焦定稿：一条历史 + 一次权威渲染，patch 是最后那个值', async () => {
@@ -358,7 +424,7 @@ describe('柱形填充色', () => {
     await act(async () => {
       typeInto(input, '#123456')
     })
-    flushPreviewFrame()
+    await flushColorPreview()
     expect(styleOf('axes_0.barseries_0.bar_0', 'path', 'fill')).toBe(css('#123456'))
     // 边框色不该被顺手改掉
     expect(styleOf('axes_0.barseries_0.bar_0', 'path', 'stroke')).toBe(css('#333333'))
@@ -373,7 +439,7 @@ describe('独立形状（patch）', () => {
     await act(async () => {
       typeInto(input, '#123456')
     })
-    flushPreviewFrame()
+    await flushColorPreview()
     expect(styleOf('axes_0.patches_4', 'path', 'fill')).toBe(css('#123456'))
     expect(styleOf('axes_0.patches_4', 'path', 'stroke')).toBe(css('#5a3286'))
     expect(engineRender).not.toHaveBeenCalled()
@@ -384,7 +450,7 @@ describe('独立形状（patch）', () => {
     await act(async () => {
       typeInto(colorInput('描边色'), '#aa0000')
     })
-    flushPreviewFrame()
+    await flushColorPreview()
     expect(styleOf('axes_0.patches_4', 'path', 'stroke')).toBe(css('#aa0000'))
     expect(styleOf('axes_0.patches_4', 'path', 'fill')).toBe(css('#17becf'))
     expect(engineRender).not.toHaveBeenCalled()
@@ -411,6 +477,8 @@ describe('独立形状（patch）', () => {
     flushPreviewFrame()
     // `fill: none` 不许被填实——预览没生效，就该说没生效
     expect(document.querySelector(`[data-element-svg="p1"] svg`)!.outerHTML).toBe(before)
+    expect(engineRender).not.toHaveBeenCalled()
+    await act(async () => colorInput('填充色').dispatchEvent(new Event('change', { bubbles: true })))
     expect(overrideOf('axes_0.patches_5', 'facecolor')).toBe('#00ff00')
     expect(engineRender).toHaveBeenCalled()
   })
@@ -420,7 +488,7 @@ describe('独立形状（patch）', () => {
     await act(async () => {
       typeInto(colorInput('描边色'), '#0000aa')
     })
-    flushPreviewFrame()
+    await flushColorPreview()
     expect(styleOf('axes_0.patches_5', 'path', 'stroke')).toBe(css('#0000aa'))
     expect(engineRender).not.toHaveBeenCalled()
   })
@@ -433,7 +501,7 @@ describe('文字颜色：默认黑色时字形组上本来没有 fill', () => {
     await act(async () => {
       typeInto(input, '#ff0000')
     })
-    flushPreviewFrame()
+    await flushColorPreview()
     expect(styleOf('axes_0.title', 'g[transform]', 'fill')).toBe(css('#ff0000'))
     expect(engineRender).not.toHaveBeenCalled()
   })
@@ -491,6 +559,8 @@ describe('manifest 的伪元素（误差棒）：gid 在 SVG 里不存在', () =
     flushPreviewFrame()
     // SVG 一个字节没变
     expect(document.querySelector(`[data-element-svg="p1"] svg`)!.outerHTML).toBe(before)
+    expect(engineRender).not.toHaveBeenCalled()
+    await act(async () => input.dispatchEvent(new Event('change', { bubbles: true })))
     // 但改动照旧生效：override 写了，后端也真的被请求了
     expect(overrideOf('axes_0.errorbar_1', 'color')).toBe('#00ff00')
     expect(engineRender).toHaveBeenCalled()
@@ -519,7 +589,7 @@ describe('historyMode', () => {
     expect(overrideOf('axes_0.lines_0', 'color')).toBeUndefined()
   })
 
-  it('granular：每个语义变化各一条历史，但后端仍然只在结束时跑一次', async () => {
+  it('granular：原生连续样本仍是草稿，完成的颜色选择是一条语义变化', async () => {
     setHistoryMode('granular')
     await mount('axes_0.lines_0')
     const input = colorInput('颜色')
@@ -528,21 +598,17 @@ describe('historyMode', () => {
         typeInto(input, v)
       })
     }
-    expect(useDocumentStore.getState().past).toHaveLength(3)
+    expect(useDocumentStore.getState().past).toHaveLength(0)
     expect(engineRender).not.toHaveBeenCalled() // 渲染与历史彻底分开
 
     await act(async () => {
       input.dispatchEvent(new FocusEvent('focusout', { bubbles: true }))
     })
     expect(engineRender).toHaveBeenCalledTimes(1)
-    // 逐条可撤销
+    expect(useDocumentStore.getState().past).toHaveLength(1)
     await act(async () => {
       useDocumentStore.getState().undo()
     })
-    expect(overrideOf('axes_0.lines_0', 'color')).toBe('#00ff00')
-    await act(async () => {
-      useDocumentStore.getState().undo()
-    })
-    expect(overrideOf('axes_0.lines_0', 'color')).toBe('#ff0000')
+    expect(overrideOf('axes_0.lines_0', 'color')).toBeUndefined()
   })
 })

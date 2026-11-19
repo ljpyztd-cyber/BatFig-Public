@@ -1,5 +1,5 @@
 /**
- * 品牌与格式标识的唯一出处。产品正式名称 Tavotto，拼写与大小写固定，
+ * 品牌与格式标识的唯一出处。本分支显示名称 BatFig，保留 Tavotto 协议标识，
  * 界面任何地方不得再手写产品名。
  *
  * **这一档没有 LEGACY_*，是有意的**（与 `engine/brand.py` 同源的决定）：
@@ -8,7 +8,9 @@
  * 只认两代前的名字、却不认上一代的，那种半吊子状态比干净断裂更难解释。
  * 文档 schema 的迁移（`migrateToProject`，接受 schema 2/3）是另一回事，照旧。
  */
-export const PRODUCT_NAME = 'Tavotto'
+export const PRODUCT_NAME = 'BatFig'
+/** 本地衍生版来源；上游协议与格式标识保持不变。 */
+export const PRODUCT_ORIGIN = 'Based on Tavotto · AGPL-3.0'
 
 /** 仓库与发行地址（与 `engine/brand.py` 的 REPO_URL 同源） */
 export const REPO_URL = 'https://github.com/Tavotto/Tavotto'

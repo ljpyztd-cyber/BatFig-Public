@@ -1,5 +1,7 @@
 import { literal } from '@/i18n'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+vi.mock('@/lib/closeGuard', () => ({ requestLeaveDocument: vi.fn(async () => true) }))
 import {
   ApiError,
   EngineError,

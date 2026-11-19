@@ -77,7 +77,19 @@ _IMPL_MODULES = {
 #: 用户可见的稳定 code（`app.py` 的漏斗把 `BackendSelectionError` 与 `is_backend_unavailable()` 认出来的、实现自己
 #: 声明的「不可用」异常（RenderCore：`CandidatePackagesMissing` / `FontsUnavailable`）转成 JSON；两种语言的文案在 `web/src/i18n/locales/*/errors.json`，
 #: `tests/test_error_codes.py` 读这个元组）。`backend_unavailable` = 依赖 / 字体不在：安装闭包不完整，明确失败不换库。
-ERROR_CODES = ("backend_retired", "backend_unknown", "backend_unavailable")
+ERROR_CODES = (
+    "backend_retired",
+    "backend_unknown",
+    "backend_unavailable",
+    "arial_missing",
+    "arial_invalid",
+    "arial_embedding_restricted",
+    "local_font_missing",
+    "local_font_invalid",
+    "local_font_embedding_restricted",
+    "glyph_missing",
+    "text_preview_invalid",
+)
 
 
 class BackendSelectionError(RuntimeError):
@@ -198,6 +210,32 @@ def missing_glyphs(s, family="serif", bold=False, italic=False):
 
 def coverage_ranges():
     return _impl().coverage_ranges()
+
+
+class CanvasTextError(RuntimeError):
+    """Public preview failure with a stable font/glyph diagnostic."""
+
+    def __init__(self, code: str, message: str, params: dict | None = None):
+        super().__init__(message)
+        self.code = code
+        self.params = params or {}
+
+
+def canvas_font_status(family="Arial"):
+    return _impl().canvas_font_status(family)
+
+
+def canvas_text_preview(obj):
+    try:
+        return _impl().canvas_text_preview(obj)
+    except Exception as exc:
+        params = getattr(exc, "params", {})
+        if is_backend_unavailable(exc) or getattr(exc, "code", None) == "fonts":
+            code = params.get("font_code") or getattr(exc, "code", "arial_missing")
+            raise CanvasTextError(code, str(exc), params) from exc
+        if isinstance(exc, (ValueError, TypeError, KeyError, OverflowError)):
+            raise CanvasTextError("text_preview_invalid", str(exc)) from exc
+        raise
 
 
 def compare_png(baseline, candidate):

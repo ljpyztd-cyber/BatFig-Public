@@ -3,6 +3,7 @@
 > 原文出自 `web/AGENTS.md`「项目系统与多画布（前端侧）」（2026-09-17 指导文档治理时按主题拆出，正文逐字未改）。
 > 这里是这一主题规则的**唯一全文**；`web/AGENTS.md` 只留速查行。改规则改这里，并同步那一行。
 
+- **网格面板编号（2026-10-22）**：`panelGridLabels` 统一生成各格相同的左上偏移；统一拼版与已占用网格上的新增编号共用它。图片对齐仍只取精确主轴框，外置图例、色标不计入。编号文字/字体不改，锁定等保护不松动，无法在共同位置容纳的编号保持原位；不在打开文档时自动排版。看护 `lib/panelGridLabels.test.ts`、`store/panelGrid.test.ts`。
 - **剪贴板（2026-08-17）**：⌘C/⌘V 的主路径是**原生 copy/paste ClipboardEvent**
   （`e.clipboardData` 同步读写，`lib/clipboard.ts` 的 handleCopyEvent /
   handlePasteEvent）——WebKit（Safari / 桌面壳）不给非编辑区的异步

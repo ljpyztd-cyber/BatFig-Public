@@ -103,6 +103,7 @@ _PHASE1 = ("figcapture", "patchspec")
 #: 不到它，第二个消费者还会再装一份（`load_engine_modules` 注释里警告的「两份
 #: figcapture」同款）。
 _PHASE2 = (
+    "fontpolicy",
     "pathgeom",
     "axestraversal",
     "spinemodel",

@@ -2,12 +2,13 @@ import { create } from 'zustand'
 import { perfSpan } from '@/perf/core'
 import { enablePatches, produceWithPatches, type Patch } from 'immer'
 import * as history from '@/lib/history'
+import { currentContentKey, projectContentKey } from '@/lib/documentCheckpoint'
+import { hasPendingDocumentChanges, restoreNamedSaveContext, settleDocumentInput, type NamedDocumentTarget, type NamedSaveState } from '@/lib/namedSave'
 import { rebaseToCurrentNative, sizeBasisOf, type SizeBasis } from '@/lib/panelNativeSize'
 import { deleteAutosave, fetchAutosave, fetchAutosaveSummary, putAutosave } from '@/lib/api'
 import {
   blocksDiskWrite,
   createDiskWriter,
-  hasUnsavedWork,
   type SaveIssue,
   type SaveState,
 } from '@/lib/autosave/diskWriter'
@@ -15,6 +16,7 @@ import { emitActivity } from '@/lib/activity'
 import { announceDocOpen } from '@/lib/docPresence'
 import { currentProjectLabel } from '@/lib/projectLabel'
 import { currentProjectId } from '@/lib/session'
+import { readProjectDocument } from '@/lib/projectDocs'
 import { msg, t, type UiMessage } from '@/i18n'
 import { newId } from '@/lib/id'
 import { boundedCount, captureTelemetry, classifyEditKind } from '@/lib/telemetry'
@@ -163,7 +165,13 @@ export function txnAnchorOf(objectId: string): TxnAnchor | undefined {
   return txnAnchors.get(objectId)
 }
 
-interface DocumentState {
+export interface DocumentState {
+  /** Formal named-file state; independent from the automatic recovery writer. */
+  namedTarget: NamedDocumentTarget | null
+  savedCheckpoint: string | null
+  namedSaveState: NamedSaveState
+  namedSaveIssue: unknown | null
+  namedSavedAt: number | null
   /** 当前激活画布的活跃编辑态（schema 2 形状；画布编辑代码只认它） */
   doc: FigureDocument
   /** 本次编辑会话的项目文档身份；自动保存槽位、最近文档、版本都按它索引 */
@@ -370,6 +378,11 @@ function noteUndoRedo(
 const INITIAL = emptyProject()
 
 export const useDocumentStore = create<DocumentState>((set, get) => ({
+  namedTarget: null,
+  savedCheckpoint: projectContentKey(INITIAL),
+  namedSaveState: 'idle',
+  namedSaveIssue: null,
+  namedSavedAt: null,
   doc: canvasToDoc(INITIAL.canvases[0]),
   documentId: newId('d'),
   projectMeta: {
@@ -593,7 +606,7 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
   switchCanvas: (id) => {
     const s0 = get()
     if (id === s0.activeCanvasId || !s0.canvases.some((c) => c.id === id)) return
-    if (s0.txn) s0.endTxn()
+    settleDocumentInput()
     const s = get()
     const target = s.canvases.find((c) => c.id === id)!
     set({
@@ -686,11 +699,13 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
     const nid = newId('c')
     // 对象 / 成组 / 布局组的 id 全部换新：id 在项目内必须唯一
     const idMap = new Map<string, string>()
+    const panelIdMap = new Map<string, string>()
     const groupMap = new Map<string, string>()
     const objects = synced.objects.map((o) => {
       const copy = structuredClone(o)
       copy.id = newId(o.type[0])
       idMap.set(o.id, copy.id)
+      if (o.type === 'panel') panelIdMap.set(o.id, copy.id)
       if (copy.groupId) {
         if (!groupMap.has(copy.groupId)) groupMap.set(copy.groupId, newId('g'))
         copy.groupId = groupMap.get(copy.groupId)
@@ -704,6 +719,21 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
         id: groupMap.get(g.id)!,
         order: g.order.map((x) => idMap.get(x)).filter((x): x is string => !!x),
       }))
+    // 编号关联与网格阅读顺序都是画布内对象引用，复制后只能指向新的对象。
+    for (const object of objects) {
+      if (object.type !== 'text' || object.panelLabelFor === undefined) continue
+      const target = panelIdMap.get(object.panelLabelFor)
+      if (target) object.panelLabelFor = target
+      else delete object.panelLabelFor
+    }
+    const panelGrid = synced.panelGrid ? structuredClone(synced.panelGrid) : undefined
+    if (panelGrid?.order) {
+      panelGrid.order = panelGrid.order.map((id) => panelIdMap.get(id)).filter((id): id is string => !!id)
+    }
+    if (panelGrid?.frames) {
+      panelGrid.frames = Object.fromEntries(Object.entries(panelGrid.frames)
+        .flatMap(([id, frame]) => panelIdMap.has(id) ? [[panelIdMap.get(id)!, frame]] : []))
+    }
     const copy: CanvasData = {
       id: nid,
       name: t('history.duplicateCanvasSuffix', { ns: 'workspace', name: synced.name }),
@@ -711,6 +741,7 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
       objects,
       guides: structuredClone(synced.guides),
       ...(layoutGroups?.length ? { layoutGroups } : {}),
+      ...(panelGrid ? { panelGrid } : {}),
     }
     const idx = s.canvases.findIndex((c) => c.id === id)
     const canvases = [...s.canvases]
@@ -758,9 +789,15 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
   },
 
   switchDocument: async (next, nextId, confirmLoss) => {
+    settleDocumentInput()
+    const before = get()
+    const pj = currentProjectId()
+    const content = currentContentKey(before)
     const hadContent = hasContent(get().buildProject())
-    if (flushAutosave() === 'error' && hadContent && confirmLoss && !(await confirmLoss())) {
-      return false
+    if (flushAutosave() === 'error' && hadContent && confirmLoss) {
+      if (!(await confirmLoss())) return false
+      const now = get()
+      if (currentProjectId() !== pj || now.documentId !== before.documentId || now.loadSeq !== before.loadSeq || currentContentKey(now) !== content) return false
     }
     const pd = migrateToProject(next)
     if (!pd) return false
@@ -791,6 +828,7 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
       txn: null,
     })
     writeCurrentId(nextId)
+    restoreNamedSaveContext()
     // 广播「我端着这份了」：别的标签页也开着同一个 documentId 时会回音报警
     announceDocOpen(nextId)
     // 新文档立刻落一次快照，这样它马上出现在「最近文档」里
@@ -1096,7 +1134,7 @@ function flushAutosaveNow(): FlushResult {
     useDocumentStore.setState({ dirty: false })
     return localOk ? 'saved' : 'error'
   }
-  disk.schedule(state.documentId, pd, currentProjectId())
+  disk.schedule(state.documentId, pd, projectOfDoc().id)
   if (!localOk) return 'error'
   const pj = projectOfDoc()
   const entry: RecentDoc = {
@@ -1363,10 +1401,11 @@ function futureSchemaOf(raw: unknown): number | null {
  *    所知，"尽力打开"等于用旧规则重写用户的新数据。
  */
 export async function readAutosaveDoc(id: string): Promise<LoadedDoc> {
+  const pj = currentProjectId()
   let fetched: Awaited<ReturnType<typeof fetchAutosave>> = null
   let reachable = true
   try {
-    fetched = await fetchAutosave(id)
+    fetched = await fetchAutosave(id, pj)
   } catch {
     reachable = false // 后端不可达：退回本机副本，但磁盘状况**未确认**
   }
@@ -1393,7 +1432,7 @@ export async function readAutosaveDoc(id: string): Promise<LoadedDoc> {
     if (!local) dropRecovery(id) // 恢复槽位转正，别再问一遍
     // 确认过磁盘上真的没有（404）才推上去。读盘失败时**不推**：那时我们
     // 不知道磁盘上有什么，一次整份 PUT 就可能盖掉一份从没读过的文档。
-    if (reachable) disk.schedule(id, doc, currentProjectId())
+    if (reachable) disk.schedule(id, doc, pj)
     return { doc, notice: null }
   }
   // 上一轮没裁决完的恢复副本优先：它一直有效，直到用户处置它
@@ -1450,6 +1489,7 @@ export async function loadAutosavedDocument(
  */
 function applyProject(pd: ProjectDocument, id: string, opts: { dirty: boolean }): void {
   const active = pd.canvases.find((c) => c.id === pd.activeCanvasId) ?? pd.canvases[0]
+  docProject = { id: currentProjectId(), name: currentProjectLabel() }
   useDocumentStore.setState({
     doc: canvasToDoc(active),
     documentId: id,
@@ -1464,6 +1504,7 @@ function applyProject(pd: ProjectDocument, id: string, opts: { dirty: boolean })
     future: [],
     txn: null,
   })
+  restoreNamedSaveContext()
 }
 
 /**
@@ -1521,8 +1562,13 @@ export async function restoreSession(): Promise<boolean> {
   const index = readIndex()
   useDocumentStore.setState({ recentDocs: index })
   if (consumeSkipRestore()) return false
-  const id = readCurrentId()
+  const pj = currentProjectId()
+  // The global recent-document pointer is shared by tabs and projects. Only a
+  // project's own mapping may select its startup document; keep the global
+  // fallback solely for the older projectless workspace.
+  const id = pj === null ? readCurrentId() : readProjectDocument(pj)?.id
   if (!id) return false
+  if (pj === null && index.find((entry) => entry.id === id)?.projectId) return false
   // 工作台挂载**之前**已经有人把这份文档装进来了（教程的 prepareDocument、切项目时接回上次的
   // 文档）：内存里这份就是它、而且是最新的，不再从磁盘读一遍盖上去。盖上去的是刚落盘的那一版，
   // 在它路上的这段时间里用户若已开始拖动，拖动当场作废——慢机器上教程一打开就拖，图纹丝不动
@@ -1534,7 +1580,7 @@ export async function restoreSession(): Promise<boolean> {
   const { doc: pd, notice } = await readAutosaveDoc(id)
   // 读盘在路上时别处换过文档或改过它的任何一片要落盘的内容：那份更新，这次恢复让位
   const now = persistedIdentity(useDocumentStore.getState())
-  if (now.some((v, i) => v !== identity[i])) return false
+  if (currentProjectId() !== pj || now.some((v, i) => v !== identity[i])) return false
   if (!pd) {
     // schema 太新是**载入失败里唯一需要说话的那一种**：文件好好的，是这个
     // 构建读不了它。默不作声地开一份空白，用户会以为自己的文档没了。
@@ -1585,11 +1631,12 @@ export function resumeAutosave(): void {
 
 export function startAutosave(): () => void {
   const onLeave = (e: BeforeUnloadEvent) => {
+    settleDocumentInput()
     // **先读状态再冲刷。** 反过来的话 `flushAutosave()` 会把状态推成
     // `saving`，而 `saving` 属于"有未落盘的工作"——于是一份干干净净的文档
     // 每次刷新都弹一次「确定离开吗」，用户学会的是无脑点确定，那时候真该
     // 拦的那一次也拦不住了。
-    const unsaved = hasUnsavedWork(useDocumentStore.getState().saveState)
+    const unsaved = hasPendingDocumentChanges()
     // 拦不拦都要冲刷：防抖窗口内的最后一次改动不能丢
     cancelPendingAutosave()
     flushAutosave()

@@ -3,6 +3,18 @@
 > 原文出自 `web/AGENTS.md`「项目系统与多画布（前端侧）」（2026-09-17 指导文档治理时按主题拆出，正文逐字未改）。
 > 这里是这一主题规则的**唯一全文**；`web/AGENTS.md` 只留速查行。改规则改这里，并同步那一行。
 
+- **正式保存与自动恢复分开（BatFig，ADR 0024 §10）**：`lib/namedSave.ts` 是命名
+  文件保存与关闭 pending 判据的入口，`lib/documentCheckpoint.ts` 是内容投影唯一
+  实现。`namedTarget / savedCheckpoint / namedSaveState` 与原自动恢复
+  `saveState / dirty` 正交：自动恢复成功不能把正式文件标为已保存。检查点比较全部
+  画布的内容，排除更新时间、激活标签及来源派生四字段，撤销回保存内容即 clean。
+  保存/撤销/离开前用 `settleDocumentInput()` 结算输入和事务；异步保存只确认发送
+  快照，期间新编辑仍 dirty，跨项目/文档回执不得回写当前状态。命名目标按 documentId
+  记在本机，恢复草稿时重读正式文件建立检查点；不持久化旧修订号冒充新观察。
+  `beforeunload` 先结算、再读 pending、最后 flush；所有队列写入使用文档归属项目。
+  启动恢复有项目时只读该项目的 `projectDoc` 映射；全局最近指针不是项目归属证据，
+  无映射保持空白并保留最近列表。读取完成还须验证项目与文档身份没有变化。
+  看护：`lib/namedSave.test.ts`、`store/saveStateMachine.test.ts`、`lib/closeGuard.test.ts`。
 - 前端把 pj 存 **sessionStorage**（`lib/session.ts`，按标签页隔离，「不同
   标签页开不同图库」就是靠它）；`?pj=` 出现在地址栏时认下并立刻抹掉。
   SSE 事件带 `pj`，前端只处理属于本标签页项目的那些（按**此刻认领的** pj 判，不看 `project`：
@@ -111,8 +123,8 @@
 
   第三档的唯一写入口是 `documentStore.applyDerivedUpdate()`，唯一调用方是
   `store/panelSourceSync.ts`。「不动 `saveState`」是因为一次外部文件改动不是
-  用户的编辑（`hasUnsavedWork()` 读的正是它，推了会让关闭保护拦一件用户没做
-  过的事）；「照样排队落盘」是因为 `script` 是**存进文档的字段**，只改内存的话
+  用户的编辑；正式保存检查点同样排除这四个来源字段，不使关闭保护误报。
+  「照样排队落盘」是因为 `script` 是**存进文档的字段**，只改内存的话
   下次打开面板又回到不可编辑。写盘本身照常走状态机，`save_error` 一个不吞。
 - **外部修改 → 画布的闭环只有一条路径**（Prompt 06）：SSE 事件、素材面板的
   「刷新项目」按钮、SSE 重连恢复，三个入口都走 `store/liveSync.ts` 的

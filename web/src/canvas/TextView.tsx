@@ -16,13 +16,19 @@ import { useUiStore } from '@/store/uiStore'
 import { mmToWorld, worldToMm } from '@/store/viewportStore'
 import { canvasFontStack, effectiveCanvasFamily } from '@/lib/typography'
 import type { TextObject } from '@/types/document'
+import { ExactFontTextView } from './ExactFontTextView'
+import { isExactTextFamily } from '@/lib/typography'
 
 /**
- * 文字对象：字体族由对象自己选（`CANVAS_TEXT_FAMILIES` 三选一），没设过就是
+ * 文字对象：字体族由对象自己选（`CANVAS_TEXT_FAMILIES`），没设过就是
  * 文档默认族（衬线 = `--font-doc`），与 UI 字体分离。
- * 高度由内容撑开后回写到文档，但不进 undo —— 它是渲染派生值。
+ * 真实具名字体通过 RenderCore 预览；旧通用族保持浏览器预览与既有几何。
  */
 export function TextView({ obj }: { obj: TextObject }) {
+  return isExactTextFamily(effectiveCanvasFamily(obj)) ? <ExactFontTextView obj={obj} /> : <LegacyTextView obj={obj} />
+}
+
+function LegacyTextView({ obj }: { obj: TextObject }) {
   const editing = useUiStore((s) => s.editingTextId === obj.id)
   const setEditingText = useUiStore((s) => s.setEditingText)
   const ref = useRef<HTMLDivElement>(null)

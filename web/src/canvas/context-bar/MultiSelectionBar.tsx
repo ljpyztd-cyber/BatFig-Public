@@ -26,6 +26,8 @@ import {
   type AlignRef,
 } from '@/store/actions'
 import { useArrangeStore } from '@/store/arrangeStore'
+import { useCanvasAlignment } from '@/store/canvasAlignment'
+import { AlignBasisControl } from '@/components/inspector/AlignBasisControl'
 import type { CanvasObject } from '@/types/document'
 import type { BarVariant } from './position'
 import { openArrangeInInspector } from './openArrange'
@@ -103,6 +105,7 @@ export function MultiSelectionBar({
         <div className="flex items-center gap-0.5">
           <MenuPopover label={qb('alignMenu')} width={232} testId="align">
             <RefPicker />
+            <AlignBasisControl />
             <AlignRow modes={ALIGN_BUTTONS} refName={ref} count={count} />
           </MenuPopover>
           <MenuPopover label={qb('distributeMenu')} width={120} testId="distribute">
@@ -126,6 +129,7 @@ export function MultiSelectionBar({
       {countEl}
       <Sep />
       <RefPicker />
+      <AlignBasisControl compact />
       <Sep />
       <AlignRow modes={ALIGN_BUTTONS} refName={ref} count={count} />
       {/* 均匀分布与等宽等高是两件事，中间给一道分隔线（审计 T29） */}
@@ -190,12 +194,14 @@ function AlignRow({
   refName: AlignRef
   count: number
 }) {
+  const pending = useCanvasAlignment().pending
   return (
     <div className="flex items-center gap-0.5">
       {modes.map(({ mode, icon: Icon, tipKey, min }) => {
         const name = alignModeLabel(mode)
-        const blocked = count < min
-        const tip = tipKey
+        const syncing = pending && mode !== 'samew' && mode !== 'sameh'
+        const blocked = count < min || syncing
+        const tip = syncing ? ar('axesSyncing') : tipKey
           ? ar(tipKey)
           : ar('alignRelativeRef', { mode: name, ref: alignRefLabel(refName) })
         return (

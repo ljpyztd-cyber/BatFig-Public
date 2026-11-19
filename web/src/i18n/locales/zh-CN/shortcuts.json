@@ -6,7 +6,7 @@
     "spaceDrag": "Space+拖动",
     "tools": "V / T / A / R / O / L",
     "wheelZoom": "{{mod}}+滚轮",
-    "shiftClick": "⇧+点击",
+    "shiftClick": "{{mod}}+点击 / ⇧+点击",
     "rightClick": "右键",
     "altClick": "{{alt}}+点击"
   },

@@ -122,6 +122,18 @@
   （含热会话 == 全量重放逐字节、噪声 / BoundaryNorm / 贴端点的平图三个反例、嵌照片的图、
   900 万像素的图、内存随像素的斜率 < 6 B、极宽图的块内峰值）。
 
+## BatFig DIY 色图（2026-10-13）
+
+- `cmap` 覆盖除命名色图字符串外可保存 `{type: "custom", colors: ["#RRGGBB", ...], positions?: [0, ..., 1]}`。
+  3 至 32 点，位置可省略为等距；给定位置必须等长、有限、从 0 到 1 严格递增，错误明确返回 warning。
+- `colorbarmodel.resolve_colormap` 是唯一解码器：生成局部 `LinearSegmentedColormap`，不注册全局名称。
+  图像、Collection 与色条共用；色条仍广播至同 norm 的兄弟，各组员撤销恢复各自原样。
+- manifest 的 `cmap.value` 对 DIY 发完整 JSON 定义（小写颜色、显式位置）；`cmap_current` 仍为九点采样事实。
+  文档保存、跨进程重放与导出从定义恢复，不能用临时名字 `batfig_custom` 回写覆盖。
+  自定义配色的感知均匀性未经验证，预检保留 `palette-semantic` 提示，两侧共享 golden case。
+- 看护：`tests/test_batfig_custom_colormap.py`：原生 Matplotlib 像素 oracle、image/QuadMesh/色条双方、
+  共享 norm、窄覆盖优先、无效输入、冷重放、矢量 PDF 与 PNG 导出；`tests/test_cmap_facts.py` 保持旧事实兼容。
+
 ## 速查表原要点（2026-09-25 迁入，#608）
 
 `src/tavotto/AGENTS.md` 那一行的「必守要点」从这天起只留索引（Codex 自动拼接的 32 KiB 上限，#608）。

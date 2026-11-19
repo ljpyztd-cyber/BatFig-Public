@@ -8,6 +8,30 @@
 
 ## 裁决摘要
 
+### BatFig 本机 Arial 与 Times New Roman 扩展（2026-10-04）
+
+用户明确要求 Arial；新增具名 `Arial` 画布族，原三通用族与十三张 OFL 分发字体保持原语义。
+Arial **只读本机已安装字体**：`BATFIG_ARIAL_DIR` 是排他覆盖；未设置时在 Windows 系统字体目录中
+查找 `arial.ttf`、`arialbd.ttf`、`ariali.ttf`、`arialbi.ttf`。其他平台需显式配置该目录。
+逐脸校验 sfnt 的真实 family、PostScript 名、粗斜位及 OS/2 嵌入限制；拒绝限制嵌入、禁止子集、仅位图嵌入。
+这不是字体授权证明；使用者仍需持有本机字体使用许可。没有字体下载、复制、打包或前端字体传送。
+身份仍为文件 sha256 + face index；shaping 与 PDF 子集读取同一份经 hash 核过的内存字节。
+
+Arial 没有 CJK 或其他字体回退。缺字体、缺所需样式或缺字形均明确阻断预览和导出；上下标可以按
+既有 richtext 语义用 Arial 基础字符缩放与基线位移合成。静态覆盖表仅用于分发的通用字体；Arial
+每张脸的真实 cmap 经本机会话接口返回，不将本机字体覆盖信息混入跨平台生成物。
+画布 Arial 的静态预览由同一 RenderCore 排版、PDF 写入、PDFium 栅格链生成 PNG；浏览器编辑输入只是
+文字录入控件，不声称它的系统字体布局是导出预览。导出仍保留可检索矢量文字，PNG 来自同一 Canonical PDF。
+
+用户后续明确允许选择 `Times New Roman`，Arial 仍为新对象与默认样式的默认值。TNR 按完全相同的
+严格本机合同读取 `times.ttf / timesbd.ttf / timesi.ttf / timesbi.ttf`；排他目录为
+`BATFIG_TIMES_NEW_ROMAN_DIR`。精确族名、四张真实脸、嵌入位与字节身份均校验；`Times`、
+`serif`、Liberation Serif 不冒称 TNR。`engine/fontpolicy.py` 是两族定义的唯一出处，
+RenderCore 与平铺 worker 共读。动态覆盖和真实预览按所选族返回；通用族静态表保持原义。
+Matplotlib 普通文字可在同图混排两族，单族 MathText 可用；同图多个严格族的 MathText
+仍明确拒绝，因为 Matplotlib 的 custom 数学字体配置是全局的，不通过替换另一族来满足请求。
+新内置规范精确接受 TNR；已保存的旧规范快照仍保持原判据，须用户显式同步后更新。
+
 | 问题 | 裁决 | 落点 |
 |---|---|---|
 | 批准字体集合 | **Liberation 2.1.5**（三族 × 四态 = 12 个 TrueType）+ **Noto Sans SC Regular**（Sans2.004 SC 地区子集 OTF，CFF CID-keyed）做唯一一张 CJK 脸；两者 SIL OFL 1.1 | `src/tavotto/rendercore/fonts_allowlist.json` |

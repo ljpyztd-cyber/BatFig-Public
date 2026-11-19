@@ -1,4 +1,5 @@
 import type { ColormapFacts } from '@/lib/api'
+import { customColormapGradient, type ColormapValue } from '@/lib/customColormap'
 
 /**
  * 内置 colormap 的渐变 stops——**离线采样自真实 matplotlib**（3.10.8，
@@ -57,10 +58,11 @@ export function gradientOfStops(
  * 新的而 manifest 里的事实还是上一张的，照用就是把上一张的色标画到新名字头上。
  */
 export function colormapGradient(
-  name: string,
+  name: ColormapValue,
   facts?: ColormapFacts | null,
   dir = 'to right',
 ): string | null {
+  if (typeof name !== 'string') return customColormapGradient(name, dir)
   if (facts?.name === name && facts.stops.length) {
     return gradientOfStops(facts.stops, facts.discrete, dir)
   }

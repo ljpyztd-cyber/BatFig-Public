@@ -270,13 +270,17 @@ def test_source_identity_hashes_in_chunks_without_read_bytes(cache, tmp_path, mo
     assert c.source_identity(src) == expected
 
 
-def test_fonts_policy_version_is_the_allowlist_hash_prefix():
-    from tavotto.rendercore.fonts import allowlist_path
+def test_fonts_policy_version_includes_the_allowlist_and_local_arial_state(monkeypatch, tmp_path):
+    from tavotto.rendercore.fonts import ARIAL_ENV, allowlist_path
 
-    assert (
-        preview.fonts_policy_version()
-        == hashlib.sha256(allowlist_path().read_bytes()).hexdigest()[:16]
-    )
+    monkeypatch.setenv(ARIAL_ENV, str(tmp_path / "no-fonts"))
+    monkeypatch.setenv("BATFIG_TIMES_NEW_ROMAN_DIR", str(tmp_path / "no-fonts"))
+    digest = hashlib.sha256(allowlist_path().read_bytes())
+    digest.update(b"Arial")
+    digest.update(b"arial_missing")
+    digest.update(b"Times New Roman")
+    digest.update(b"local_font_missing")
+    assert preview.fonts_policy_version() == digest.hexdigest()[:16]
 
 
 def test_a_handed_out_but_not_yet_acquired_lock_survives_table_eviction(cache, tmp_path):

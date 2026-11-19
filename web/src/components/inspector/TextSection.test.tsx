@@ -24,6 +24,7 @@ import { emptyProject, type TextObject } from '@/types/document'
 import { propertyPathOf } from '@/lib/typography'
 import { CANVAS_TEXT_PRIMARY_PROPS } from './typographyAdapter'
 import { TextSection, scriptHotkey } from './TextSection'
+import { useCanvasFontRuntime } from '@/lib/canvasFontRuntime'
 
 /** 自动保存会 PUT 到后端；这里只要不抛就行 */
 globalThis.fetch = (async () => new Response('{}', { status: 200 })) as typeof fetch
@@ -69,6 +70,7 @@ const currentText = () => (s().doc.objects[0] as TextObject).text
 
 beforeEach(async () => {
   localStorage.clear()
+  useCanvasFontRuntime.setState({ Arial: null, 'Times New Roman': null, failed: false })
   useSelectionStore.getState().clear()
   await s().switchDocument(emptyProject(), 'd_textsection')
   s().commit(literal('放入对象'), (d) => {
@@ -109,6 +111,36 @@ const clickButton = (label: string) => {
   const btn = container.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)!
   act(() => btn.click())
 }
+
+describe('exact font controls', () => {
+  it('keyboard selection writes Times New Roman, B/I remain usable, and missing font is explicit', async () => {
+    Element.prototype.scrollIntoView ??= function scrollIntoView() {}
+    act(() => s().silent((d) => { (d.objects[0] as TextObject).fontFamily = 'Arial' }))
+    const field = container.querySelector('[data-prop="fontFamily"]')!
+    const trigger = field.querySelector('button')!
+    await act(async () => {
+      trigger.focus()
+      trigger.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
+    })
+    const option = document.querySelector<HTMLElement>('[data-font-family-option="Times New Roman"]')!
+    expect(option).not.toBeNull()
+    expect(option.style.fontFamily).toBe('var(--font-sans)')
+    await act(async () => {
+      const item = option.parentElement!.parentElement!
+      item.focus()
+      item.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    })
+    expect(s().doc.objects[0]).toMatchObject({ fontFamily: 'Times New Roman' })
+    expect(field.textContent).toContain('Times New Roman')
+    expect(container.querySelector('[data-canvas-font-unavailable="Times New Roman"]')).not.toBeNull()
+    const weight = container.querySelector<HTMLButtonElement>(`[data-prop="${propertyPathOf('canvasText', 'weight')}"] button`)!
+    const style = container.querySelector<HTMLButtonElement>(`[data-prop="${propertyPathOf('canvasText', 'style')}"] button`)!
+    act(() => { weight.click(); style.click() })
+    expect(s().doc.objects[0]).toMatchObject({ fontFamily: 'Times New Roman', bold: true, italic: true })
+    act(() => { s().undo(); s().undo(); s().undo() })
+    expect(s().doc.objects[0]).toMatchObject({ fontFamily: 'Arial', bold: false })
+  })
+})
 
 describe('scriptHotkey', () => {
   const ev = (over: Partial<KeyboardEvent>): KeyboardEvent =>

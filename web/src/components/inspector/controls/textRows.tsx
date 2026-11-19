@@ -6,6 +6,7 @@ import { RotateCcw, TextAlignCenter, TextAlignEnd, TextAlignStart } from '@/comp
 import { ICON_SIZE } from '@/components/ui/Icon'
 import { t as translate } from '@/i18n'
 import { cn } from '@/lib/utils'
+import { isExactTextFamily } from '@/lib/typography'
 import { Button } from '../../ui/Button'
 import { Row } from '../../ui/Field'
 import { ColorField, NumberField } from '../../ui/Input'
@@ -24,7 +25,7 @@ import { fontStackOf } from './fontStack'
  * 就不渲染 FontFamilyRow——不摆假控件。
  */
 
-const tc = (key: string) => translate(`textControls.${key}`, { ns: 'inspector' })
+const tc = (key: string, values?: Record<string, unknown>) => translate(`textControls.${key}`, { ns: 'inspector', ...values })
 
 /** 已修改状态：标签前的点 + 行尾恢复按钮（与 FieldRow 同一套表达） */
 export function labeledWithState(label: string, overridden?: boolean): ReactNode {
@@ -162,7 +163,7 @@ function FontFamilyRowView({
             value: o,
             // Aa 预览：选项文字用它自己的字体栈显示；写入值仍是原始选项串
             label: (
-              <span style={{ fontFamily: fontStackOf(o) }}>
+              <span data-font-family-option={o} style={{ fontFamily: fontStackOf(o) }}>
                 {optionLabelOf(o)}
                 {missing.has(o) && (
                   <span className="ml-1 font-sans text-ink-3">{tc('fontMissingTag')}</span>
@@ -174,7 +175,7 @@ function FontFamilyRowView({
         {overridden && onReset && <ResetChip label={label} onReset={onReset} />}
       </Row>
       {!mixed && missing.has(value) && (
-        <p className="pl-1 text-xs leading-relaxed text-warn">{tc('fontMissingHint')}</p>
+        <p className="pl-1 text-xs leading-relaxed text-warn">{isExactTextFamily(value) ? tc('fontMissingExactHint', { family: value }) : tc('fontMissingHint')}</p>
       )}
     </>
   )
@@ -289,6 +290,8 @@ export function TextColorRow({
   value,
   onChange,
   onGestureEnd,
+  onPreview,
+  scopeKey,
   labelWidth,
   overridden,
   onReset,
@@ -297,6 +300,8 @@ export function TextColorRow({
   value: string
   onChange: (v: string) => void
   onGestureEnd?: () => void
+  onPreview?: (value: string | null) => void
+  scopeKey?: string
   labelWidth?: number
   overridden?: boolean
   onReset?: () => void
@@ -307,7 +312,7 @@ export function TextColorRow({
   const mixedText = translate('element.mixedValues', { ns: 'inspector' })
   return (
     <Row label={labeledWithState(label, overridden)} labelWidth={labelWidth}>
-      <ColorField ariaLabel={label} value={value} onChange={onChange} onGestureEnd={onGestureEnd} />
+      <ColorField ariaLabel={label} scopeKey={scopeKey} value={value} onChange={onChange} onGestureEnd={onGestureEnd} onPreview={onPreview} />
       {mixed && <span className="shrink-0 text-xs text-ink-3">{mixedText}</span>}
       {overridden && onReset && <ResetChip label={label} onReset={onReset} />}
     </Row>

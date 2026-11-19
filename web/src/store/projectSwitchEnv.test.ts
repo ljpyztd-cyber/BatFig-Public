@@ -5,6 +5,8 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+vi.mock('@/lib/closeGuard', () => ({ requestLeaveDocument: vi.fn(async () => true) }))
+
 import { setCurrentProjectId } from '@/lib/session'
 import { useEnvStore } from './envStore'
 import { useProjectStore } from './projectStore'

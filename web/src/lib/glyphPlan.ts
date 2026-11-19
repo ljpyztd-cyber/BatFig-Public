@@ -27,6 +27,8 @@
  */
 
 import coverageTable from '@glyphcoverage'
+import { exactFontFace, faceHasGlyph } from './canvasFontRuntime'
+import { isExactTextFamily } from './typography'
 import {
   DEFAULT_INTERPRETATION,
   interpretRuns,
@@ -146,7 +148,17 @@ export function substitutedChars(text: string): string[] {
 export function textDiagnostics(
   text: string,
   interpretation?: TextInterpretation,
-): { missing: string[]; substituted: string[] } {
+  font?: { fontFamily?: string; bold?: boolean; italic?: boolean },
+): { missing: string[]; substituted: string[]; unavailable?: boolean } {
+  if (isExactTextFamily(font?.fontFamily)) {
+    const face = exactFontFace(font.fontFamily, font.bold, font.italic)
+    if (!face) return { missing: [], substituted: [], unavailable: true }
+    const has = (cp: number) => cp === 10 || cp === 13 || cp === 9 || faceHasGlyph(face, cp)
+    const body = interpretRuns(parseRuns(text), {
+      isPrimary: has, isDrawable: has, mode: interpretation ?? DEFAULT_INTERPRETATION,
+    }).map((r) => r.text).join('')
+    return { missing: [...new Set([...body].filter((c) => !has(c.codePointAt(0)!)))], substituted: [] }
+  }
   const runs = interpretRuns(parseRuns(text), {
     isPrimary: (cp) => layerOf(cp) === 'primary',
     isDrawable: (cp) => layerOf(cp) !== 'missing',

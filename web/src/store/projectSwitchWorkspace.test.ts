@@ -8,7 +8,9 @@
  * 那份文档里停的那张图当场被顶掉——而他只是切了个项目，从没表达过「我不要
  * 快速编辑了」。派生状态不许覆盖用户偏好。
  */
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+vi.mock('@/lib/closeGuard', () => ({ requestLeaveDocument: vi.fn(async () => true) }))
 
 import { setCurrentProjectId } from '@/lib/session'
 import { canvasToDoc, type CanvasData, type PanelObject } from '@/types/document'

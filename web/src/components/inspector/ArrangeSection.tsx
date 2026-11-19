@@ -37,6 +37,7 @@ import {
   type ZMove,
 } from '@/store/actions'
 import { useArrangeStore } from '@/store/arrangeStore'
+import { useCanvasAlignment } from '@/store/canvasAlignment'
 import { useDocumentStore } from '@/store/documentStore'
 import { useSelectionStore } from '@/store/selectionStore'
 import type { CanvasObject, LayoutGroup } from '@/types/document'
@@ -55,6 +56,7 @@ import {
   type ArrangeButton,
 } from './arrangeButtons'
 import { useSelectedObjects } from './common'
+import { AlignBasisControl } from './AlignBasisControl'
 
 /** 本组的文案在 inspector:arrange.* 下；对齐动作名复用 inspector:alignMode.* */
 const ar = (key: string, values?: Record<string, unknown>) =>
@@ -153,10 +155,11 @@ function AlignToolbar({
   tipFor: (mode: AlignMode) => string
   onPick: (mode: AlignMode) => void
 }) {
+  const pending = useCanvasAlignment().pending
   const horizontal = ALIGN_BUTTONS.filter((b) => H_ALIGN.has(b.mode))
   const vertical = ALIGN_BUTTONS.filter((b) => !H_ALIGN.has(b.mode))
   const render = ({ mode, icon: Icon }: (typeof ALIGN_BUTTONS)[number]) => (
-    <IconButton key={mode} label={nameFor(mode)} tip={tipFor(mode)} side="left" onClick={() => onPick(mode)}>
+    <IconButton key={mode} label={nameFor(mode)} tip={pending ? ar('axesSyncing') : tipFor(mode)} side="left" disabled={pending} onClick={() => onPick(mode)}>
       <Icon size={ICON_SIZE.md} />
     </IconButton>
   )
@@ -208,6 +211,9 @@ export function ArrangeSection({
       /* `data-arrange-section`：浮动栏「更多」滚到这里；属性页没有 section 路由 */
       <Section title={ar('title')} className="scroll-mt-2" data-arrange-section="">
         <ArrangeGrid>
+          <ArrangeRow label={ar('basisLabel')}>
+            <AlignBasisControl />
+          </ArrangeRow>
           <ArrangeRow label={ar('align')}>
             <div data-single-align>
               <AlignToCanvasRow />
@@ -264,6 +270,9 @@ function MultiAlignRows({ count }: { count: number }) {
           className="w-auto min-w-0 max-w-full"
         />
       </ArrangeRow>
+      <ArrangeRow label={ar('basisLabel')}>
+        <AlignBasisControl />
+      </ArrangeRow>
 
       <ArrangeRow label={ar('align')}>
         <AlignToolbar
@@ -312,6 +321,7 @@ function ArrangeToolbar({
   refName: AlignRef
   count: number
 }) {
+  const pending = useCanvasAlignment().pending
   return (
     <div role="toolbar" aria-label={label} className="flex items-center gap-0.5">
       {buttons.map(({ mode, icon: Icon, tipKey, min }) => {
@@ -326,7 +336,7 @@ function ArrangeToolbar({
                 : true
             }
             side="left"
-            disabled={count < min}
+            disabled={count < min || (pending && mode !== 'samew' && mode !== 'sameh')}
             onClick={() => alignSelectedTo(mode, refName)}
           >
             <Icon size={ICON_SIZE.md} />

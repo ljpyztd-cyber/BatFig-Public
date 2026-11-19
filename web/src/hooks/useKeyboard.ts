@@ -17,7 +17,7 @@ import {
 } from '@/store/actions'
 import { cancelActivePointerGesture } from '@/canvas/interactions'
 import { useDocumentStore } from '@/store/documentStore'
-import { finishActiveGesture } from '@/store/gestureCoordinator'
+import { settleDocumentInput } from '@/lib/namedSave'
 import { useInteractionStore } from '@/store/interactionStore'
 import { panelRender, useRenderStore } from '@/store/renderStore'
 import { useSelectionStore } from '@/store/selectionStore'
@@ -93,7 +93,7 @@ export function runUndoRedo(redo: boolean) {
   // （事务、安静计时器、预览会话、挂起的定稿渲染）。只靠 `undo()` 开头那句
   // `if (state.txn) state.endTxn()` 是不够的——hook 侧的 open 标记与计时器
   // 不知情，会一直悬着（issue #131）。
-  finishActiveGesture()
+  settleDocumentInput()
   const doc = useDocumentStore.getState()
   const label = redo ? doc.redo() : doc.undo()
   const ui = useUiStore.getState()
@@ -110,6 +110,18 @@ export function runUndoRedo(redo: boolean) {
 
 export function useKeyboard() {
   useEffect(() => {
+    // Capture only save: NumberField/text editors stop bubbling for their own
+    // keys. Undo/redo must still belong to an active native text input.
+    const onSaveKeyDown = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== 's') return
+      e.preventDefault()
+      e.stopPropagation()
+      // A modal owns its draft and confirmation buttons. Don't open a second
+      // save dialog behind it, but never let the browser save the HTML page.
+      if (e.target instanceof Element && e.target.closest('[role="dialog"]')) return
+      if (e.shiftKey) useUiStore.getState().setLayoutOpen(true, 'save')
+      else void runManualSave()
+    }
     const onKeyDown = (e: KeyboardEvent) => {
       const ui = useUiStore.getState()
 
@@ -131,19 +143,6 @@ export function useKeyboard() {
 
       const mod = e.metaKey || e.ctrlKey
 
-      // ⌘S 在**输入框和对话框里也要拦**：那才是用户最想按它的时刻（刚给
-      // 画布改完名、刚在对话框里填完东西）。不拦的话浏览器弹出「保存网页」
-      // 另存对话框——用户以为自己存了文档，存下来的是一张 HTML。
-      // 这是 inEditableTarget 之前**唯一**的例外：其余快捷键在输入框里都该
-      // 让位给原生编辑行为。
-      if (mod && e.key.toLowerCase() === 's') {
-        e.preventDefault()
-        // ⇧⌘S = 另存为一份命名的画布文件；⌘S = 真的保存当前文档
-        if (e.shiftKey) useUiStore.getState().setLayoutOpen(true)
-        else void runManualSave()
-        return
-      }
-
       if (inEditableTarget(e)) return
       const doc = useDocumentStore.getState()
 
@@ -154,11 +153,7 @@ export function useKeyboard() {
       }
       if (mod && e.key.toLowerCase() === 'y') {
         e.preventDefault()
-        if (undoRedoBlocked()) return
-        const label = doc.redo()
-        if (label) {
-          ui.setStatus(msg('status.redone', { label: formatMessage(label) }, 'workspace'))
-        }
+        runUndoRedo(true)
         return
       }
       if (mod && e.key.toLowerCase() === 'd') {
@@ -313,12 +308,14 @@ export function useKeyboard() {
     const onCopy = (e: ClipboardEvent) => void handleCopyEvent(e)
     const onPaste = (e: ClipboardEvent) => void handlePasteEvent(e)
 
+    window.addEventListener('keydown', onSaveKeyDown, true)
     window.addEventListener('keydown', onKeyDown)
     window.addEventListener('keyup', onKeyUp)
     window.addEventListener('blur', onBlur)
     document.addEventListener('copy', onCopy)
     document.addEventListener('paste', onPaste)
     return () => {
+      window.removeEventListener('keydown', onSaveKeyDown, true)
       window.removeEventListener('keydown', onKeyDown)
       window.removeEventListener('keyup', onKeyUp)
       window.removeEventListener('blur', onBlur)

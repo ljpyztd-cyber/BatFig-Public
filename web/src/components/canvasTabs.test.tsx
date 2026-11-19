@@ -14,13 +14,27 @@
  */
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+vi.mock('@/lib/api', async (original) => ({
+  ...await original<typeof import('@/lib/api')>(),
+  saveLayout: vi.fn(),
+}))
 
 import { CanvasTabs } from '@/components/CanvasTabs'
 import { TooltipProvider } from '@/components/ui/Tooltip'
 import { tabClass } from '@/components/ui/tabClass'
 import { useDocumentStore } from '@/store/documentStore'
-import { emptyProject } from '@/types/document'
+import { activateCanvas, dropCanvasSession } from '@/store/canvasSession'
+import { useSelectionStore } from '@/store/selectionStore'
+import { useUiStore } from '@/store/uiStore'
+import { useViewportStore } from '@/store/viewportStore'
+import { ApiError, saveLayout } from '@/lib/api'
+import { answerLeaveRequest, cancelLeaveRequest, useLeaveGuard } from '@/lib/closeGuard'
+import { bindNamedDocumentTarget } from '@/lib/namedSave'
+import { setCurrentProjectId } from '@/lib/session'
+import { literal } from '@/i18n'
+import { canvasToDoc, emptyProject, type PanelObject, type ProjectDocument } from '@/types/document'
 
 declare global {
   // eslint-disable-next-line no-var
@@ -50,6 +64,12 @@ const tabs = () => [...host.querySelectorAll('[role=tab]')] as HTMLElement[]
 const nameBox = (t: HTMLElement) => t.firstElementChild as HTMLElement
 
 beforeEach(async () => {
+  cancelLeaveRequest()
+  localStorage.clear()
+  setCurrentProjectId('tabs-project')
+  dropCanvasSession('c1')
+  dropCanvasSession('c2')
+  vi.mocked(saveLayout).mockReset().mockResolvedValue({ ok: true, revision: 'r2' })
   await useDocumentStore.getState().switchDocument(emptyProject(), 'd_tabs')
   const canvas = (id: string, name: string) => ({
     id,
@@ -67,8 +87,10 @@ beforeEach(async () => {
 })
 
 afterEach(() => {
+  cancelLeaveRequest()
   act(() => root.unmount())
   host.remove()
+  useUiStore.getState().setStatus(null)
 })
 
 describe('画布标签条', () => {
@@ -128,5 +150,135 @@ describe('画布标签条', () => {
     } finally {
       proto.getBoundingClientRect = real
     }
+  })
+})
+
+describe('closing a canvas preserves the document session', () => {
+  const store = () => useDocumentStore.getState()
+  const view = () => {
+    const { zoom, panX, panY } = useViewportStore.getState()
+    return { zoom, panX, panY }
+  }
+  const tick = async () => { for (let i = 0; i < 12; i++) await Promise.resolve() }
+  const clickClose = async (id: string) => {
+    const button = host.querySelector<HTMLButtonElement>(`[data-close-canvas="${id}"]`)
+    expect(button).toBeInstanceOf(HTMLButtonElement)
+    await act(async () => { button!.click(); await tick() })
+  }
+  const edit = (x: number) => store().commit(literal('move panel'), (doc) => { doc.objects[0].x = x })
+
+  beforeEach(() => {
+    const canvases = store().canvases.map((canvas, index) => ({
+      ...canvas,
+      objects: [{
+        id: `p${index + 1}`, type: 'panel', fileId: `Fig${index + 1}.pdf`, fileKind: 'pdf',
+        nativeW: 80, nativeH: 60, x: 10, y: 20, w: 40, h: 30, overrides: [],
+      } satisfies PanelObject],
+    }))
+    useDocumentStore.setState({ canvases, doc: canvasToDoc(canvases[0]), canvasSessions: {} })
+    useSelectionStore.getState().set(['p1'])
+    useUiStore.setState({ elementPanelId: 'p1', selectedGids: ['axes_0'], editingTextId: null })
+    useViewportStore.getState().setView({ zoom: 1.75, panX: -19, panY: 31 })
+    bindNamedDocumentTarget({ name: 'two-panels', revision: 'r1' })
+  })
+
+  it('cancel leaves the active tab, content and undo history in place', async () => {
+    edit(42)
+    const before = store().doc
+    const history = store().past
+    mount()
+    await clickClose('c1')
+    expect(useLeaveGuard.getState().request).toMatchObject({ kind: 'canvas', canvasId: 'c1' })
+    expect(store().openTabs).toEqual(['c1', 'c2'])
+    await act(async () => { await answerLeaveRequest('cancel'); await tick() })
+    expect(store().openTabs).toEqual(['c1', 'c2'])
+    expect(store().activeCanvasId).toBe('c1')
+    expect(store().doc).toBe(before)
+    expect(store().past).toBe(history)
+    expect(useSelectionStore.getState().ids).toEqual(['p1'])
+    expect(saveLayout).not.toHaveBeenCalled()
+  })
+
+  it.each([500, 409])('save HTTP %i keeps the tab open, with its edit and history available', async (status) => {
+    edit(42)
+    vi.mocked(saveLayout).mockRejectedValueOnce(new ApiError('save failed', status, {}))
+    mount()
+    await clickClose('c1')
+    await act(async () => { await answerLeaveRequest('save'); await tick() })
+    expect(store().openTabs).toEqual(['c1', 'c2'])
+    expect(store().activeCanvasId).toBe('c1')
+    expect(store().doc.objects[0].x).toBe(42)
+    expect(store().past).toHaveLength(1)
+    expect(useLeaveGuard.getState().failed).toBe(true)
+  })
+
+  it('waits for disk success, then restores the closed canvas history and UI when reopened', async () => {
+    edit(42)
+    edit(61)
+    store().undo()
+    const oldPast = store().past
+    const oldFuture = store().future
+    const oldView = view()
+    activateCanvas('c2')
+    useSelectionStore.getState().set(['p2'])
+    useUiStore.setState({ elementPanelId: 'p2', selectedGids: ['axes_1'] })
+    useViewportStore.getState().setView({ zoom: 2, panX: 11, panY: -7 })
+    const secondView = view()
+    activateCanvas('c1')
+
+    let finish!: (value: Awaited<ReturnType<typeof saveLayout>>) => void
+    vi.mocked(saveLayout).mockReturnValueOnce(new Promise((resolve) => { finish = resolve }))
+    mount()
+    await clickClose('c1')
+    let saving!: ReturnType<typeof answerLeaveRequest>
+    act(() => { saving = answerLeaveRequest('save') })
+    expect(store().openTabs).toEqual(['c1', 'c2'])
+    expect(store().activeCanvasId).toBe('c1')
+    expect(useLeaveGuard.getState().busy).toBe(true)
+    await act(async () => { finish({ ok: true, revision: 'r2' }); await saving; await tick() })
+    expect(store().openTabs).toEqual(['c2'])
+    expect(store().canvases).toHaveLength(2)
+    expect(store().activeCanvasId).toBe('c2')
+    expect(useSelectionStore.getState().ids).toEqual(['p2'])
+    expect(view()).toEqual(secondView)
+    expect(saveLayout).toHaveBeenCalledTimes(1)
+    const savedDocument = vi.mocked(saveLayout).mock.calls[0][1] as ProjectDocument
+    expect(savedDocument.canvases[0].objects[0].x).toBe(42)
+
+    act(() => activateCanvas('c1', { open: true }))
+    expect(store().doc.objects[0].x).toBe(42)
+    expect(store().past).toEqual(oldPast)
+    expect(store().future).toEqual(oldFuture)
+    expect(useSelectionStore.getState().ids).toEqual(['p1'])
+    expect(useUiStore.getState().selectedGids).toEqual(['axes_0'])
+    expect(view()).toEqual(oldView)
+    act(() => store().redo())
+    expect(store().doc.objects[0].x).toBe(61)
+  })
+
+  it('closing a changed inactive tab does not change the active selection or viewport', async () => {
+    activateCanvas('c2')
+    edit(77)
+    useSelectionStore.getState().set(['p2'])
+    activateCanvas('c1')
+    // Change the live UI after its prior snapshot: restoring the current canvas
+    // while closing another tab must not roll these fresh choices back.
+    useSelectionStore.getState().clear()
+    useViewportStore.getState().setView({ zoom: 3, panX: 24, panY: -15 })
+    const activeDoc = store().doc
+    const activeView = view()
+    mount()
+    await clickClose('c2')
+    await act(async () => { await answerLeaveRequest('discard'); await tick() })
+    expect(store().openTabs).toEqual(['c1'])
+    expect(store().activeCanvasId).toBe('c1')
+    expect(store().doc).toBe(activeDoc)
+    expect(useSelectionStore.getState().ids).toEqual([])
+    expect(view()).toEqual(activeView)
+    expect(saveLayout).not.toHaveBeenCalled()
+    act(() => activateCanvas('c2', { open: true }))
+    expect(store().doc.objects[0].x).toBe(77)
+    expect(store().past).toHaveLength(1)
+    expect(useSelectionStore.getState().ids).toEqual(['p2'])
   })
 })

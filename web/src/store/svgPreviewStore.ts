@@ -88,6 +88,7 @@ interface PanelPreview {
   scales: Map<string, PreviewScale>
   /** 样式改动的可逆账本（每个元素只记最早那次的整条 style 原文） */
   edits: StyleEdit[]
+  styledNodes: Set<StyleEdit['el']>
   /** `gid|prop` → 当前预览值，供重新挂载时重放 */
   styles: Map<string, PreviewPatch & { role: string }>
   /**
@@ -210,6 +211,7 @@ function panelStateFor(
     transforms: new Map(),
     scales: new Map(),
     edits: [],
+    styledNodes: new Set(),
     styles: new Map(),
     lines: new Map(),
     sizeMm,
@@ -513,7 +515,10 @@ function writeStyle(op: Extract<PendingOp, { kind: 'style' }>): void {
   // 每个元素的 base（整条 style 原文）只记最早那一次：同一条属性被拖着改
   // 十次，账本里仍然只有 matplotlib 给的那份原文
   for (const e of edits) {
-    if (!p.edits.some((x) => x.el === e.el)) p.edits.push(e)
+    if (!p.styledNodes.has(e.el)) {
+      p.styledNodes.add(e.el)
+      p.edits.push(e)
+    }
   }
 }
 
@@ -558,6 +563,7 @@ export function retargetPreview(
   p.transforms = new Map(Object.entries(translate))
   p.scales.clear()
   p.edits = []
+  p.styledNodes.clear()
   p.styles.clear()
   session.awaitKey = awaitKey
   return true
@@ -657,6 +663,7 @@ export function reattachPreview(panelId: string, renderKey: string): void {
   p.baseTransforms.clear()
   p.baseNodes.clear()
   p.edits = []
+  p.styledNodes.clear()
   for (const [gid, [dfx, dfy]] of p.transforms) {
     writeTransform({ kind: 'transform', panelId, gid, dfx, dfy, scale: p.scales.get(gid) })
   }

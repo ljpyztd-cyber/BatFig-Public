@@ -1,6 +1,7 @@
 """Worker 池（Flask 父进程侧，纯标准库——.venv 里没有 matplotlib）。
 
-每个 (项目, 脚本) 一个常驻子进程；LRU 淘汰，超出 MAX_ALIVE 的最久未用者关停。
+每个 (项目, 脚本) 一个常驻子进程；LRU 只淘汰无请求持有的会话。
+忙时可暂时超出 MAX_ALIVE，最后一个使用者释放后收敛。
 
 **池键必须带项目路径**：多个标签页可以各自打开不同的图库，两个项目里
 同名的 fig1.py 是两个完全不同的脚本，只按脚本名索引会把 A 项目的会话
@@ -28,7 +29,7 @@ LOG = logging.getLogger("tavotto.engine")
 
 ENGINE_CACHE = config.data_dir() / "cache" / "engine"
 WORKER_PY = Path(__file__).resolve().parent / "worker.py"
-MAX_ALIVE = 3  # 同时存活的 worker 会话数（每个都端着整套 Figure 的内存）
+MAX_ALIVE = 3  # 空闲时的会话预算；不以淘汰正在使用的 Figure 来满足上限
 
 # ---- 引擎缓存治理（对照 app.prune_render_cache / prune_backups） ------------
 #: cache/engine/ 全部会话目录的总预算。比渲染缓存的 500MB 宽：这里躺着
@@ -365,6 +366,77 @@ _workers: dict[tuple[str, str], "EngineWorker"] = {}
 #: 一次写回的干净重放正跑到一半，目录可能被后台清理线程整个删掉。
 _oneshot_bases: set[str] = set()
 _lock = threading.Lock()
+# Counts are protected by _lock and keyed by worker identity, not the script key:
+# explicit invalidation may replace a session while its old owner is unwinding.
+_worker_users: dict[int, int] = {}
+_scope_local = threading.local()
+
+
+@contextlib.contextmanager
+def worker_scope():
+    """Keep every acquired worker alive until this logical operation finishes.
+
+    Flask requests and bound background jobs enter this scope *before* resolving
+    sessions. Pins are registered inside acquire's pool lock, so both the gap
+    before the first protocol request and the build-to-override gap are covered.
+    Nested scopes share the outer operation's ownership, including workers first
+    acquired by an inner helper. Concurrent threads each hold their own reference.
+    Explicit invalidate/cancel/shutdown remains authoritative over these pins.
+    """
+    previous = getattr(_scope_local, "workers", None)
+    if previous is not None:
+        yield
+        return
+    owned = {}
+    _scope_local.workers = owned
+    try:
+        yield
+    finally:
+        _scope_local.workers = None
+        with _lock:
+            for identity, worker in owned.items():
+                remaining = _worker_users[identity] - 1
+                if remaining:
+                    _worker_users[identity] = remaining
+                else:
+                    del _worker_users[identity]
+                    worker.last_used = time.time()
+            victims = _lru_victims_locked()
+        _shutdown_lru(victims)
+
+
+def _pin_worker_locked(worker) -> None:
+    owned = getattr(_scope_local, "workers", None)
+    identity = id(worker)
+    if owned is not None and identity not in owned:
+        owned[identity] = worker
+        _worker_users[identity] = _worker_users.get(identity, 0) + 1
+
+
+def _lru_victims_locked(*, keep=None) -> list:
+    """Remove only unleased excess sessions; caller holds _lock."""
+    alive = [(key, worker) for key, worker in _workers.items() if worker.alive()]
+    excess = max(0, len(alive) - MAX_ALIVE)
+    idle = sorted(
+        (
+            (key, worker)
+            for key, worker in alive
+            if worker is not keep and id(worker) not in _worker_users
+        ),
+        key=lambda item: item[1].last_used,
+    )
+    victims = []
+    for key, worker in idle[:excess]:
+        _workers.pop(key)
+        victims.append(worker)
+    return victims
+
+
+def _shutdown_lru(victims) -> None:
+    for worker in victims:
+        LOG.info("worker LRU 淘汰: %s", worker.script_name)
+        threading.Thread(target=worker.shutdown, daemon=True).start()
+
 
 #: 空 patch 列表的规范哈希（`last_patch_hash` 的初值：刚 build 完的 figure
 #: 就是「一条 override 都没应用」的状态）。
@@ -2705,7 +2777,7 @@ def safe_workers_using(python: str) -> int:
 
 
 def get(script_name: str, figures_dir: str, entry: str) -> EngineWorker:
-    """取（或重建）某脚本的 worker；崩溃的自动换新；超出 MAX_ALIVE 按 LRU 淘汰。"""
+    """取（或重建）worker；并发调用方用 worker_scope 包住取会话到消费完响应。"""
     return acquire(script_name, figures_dir, entry)[0]
 
 
@@ -2778,15 +2850,10 @@ def acquire(script_name: str, figures_dir: str, entry: str) -> tuple[EngineWorke
                 _workers[key] = w
                 created = True
             w.last_used = time.time()
-            alive = [(k, x) for k, x in _workers.items() if x.alive()]
-            if len(alive) > MAX_ALIVE:
-                stale = sorted(alive, key=lambda kv: kv[1].last_used)
-                for vkey, victim in stale[: len(alive) - MAX_ALIVE]:
-                    if victim is not w:
-                        LOG.info("worker LRU 淘汰: %s", victim.script_name)
-                        _workers.pop(vkey, None)
-                        threading.Thread(target=victim.shutdown, daemon=True).start()
+            _pin_worker_locked(w)
+            victims = _lru_victims_locked(keep=w)
         break
+    _shutdown_lru(victims)
     if created:  # 出锁再清：prune 要遍历磁盘，不能占着 _lock
         _schedule_prune()
     return w, created

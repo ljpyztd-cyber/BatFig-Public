@@ -363,6 +363,7 @@ describe('图标题 + X/Y 轴标题的公共样式', () => {
     const swatch = colorInputs()[0]
     await act(async () => {
       typeInto(swatch, '#aa2233')
+      swatch.dispatchEvent(new Event('change', { bubbles: true }))
     })
     expect(overrideOf('axes_0.title', 'color')).toBe('#aa2233')
     expect(overrideOf('axes_0.xaxis.label', 'color')).toBe('#aa2233')

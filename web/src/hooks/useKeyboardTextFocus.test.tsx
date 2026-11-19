@@ -26,6 +26,8 @@ import { useSelectionStore } from '@/store/selectionStore'
 import { useUiStore } from '@/store/uiStore'
 import { useViewportStore } from '@/store/viewportStore'
 import { useWorkspaceStore } from '@/store/workspace'
+import { useInteractionStore } from '@/store/interactionStore'
+import { hasActiveGesture, registerGesture, resetGestureCoordinator } from '@/store/gestureCoordinator'
 import { canvasToDoc } from '@/types/document'
 import type { CanvasData, PanelObject } from '@/types/document'
 
@@ -84,6 +86,8 @@ const field = (sel: 'input' | 'textarea' | 'select') => {
 }
 
 beforeEach(() => {
+  resetGestureCoordinator()
+  useInteractionStore.getState().end()
   const canvas: CanvasData = {
     id: 'c1',
     name: 'Fig 1',
@@ -118,6 +122,8 @@ afterEach(() => {
   document.body.innerHTML = ''
   useWorkspaceStore.getState().clear()
   useViewportStore.getState().setSpaceDown(false)
+  resetGestureCoordinator()
+  useInteractionStore.getState().end()
 })
 
 describe.each(['input', 'textarea', 'select'] as const)('焦点在 <%s> 里', (sel) => {
@@ -143,6 +149,18 @@ describe.each(['input', 'textarea', 'select'] as const)('焦点在 <%s> 里', (s
     expect(panel()!.x).toBe(99)
     expect(doc().past).toHaveLength(1)
     expect([a, b, c].some((e) => e.defaultPrevented)).toBe(false)
+  })
+
+  it('Ctrl+Y leaves pending document redo to the canvas and does not swallow native text redo', () => {
+    act(() => {
+      doc().commit(literal('move'), (d) => { d.objects[0].x = 99 })
+      doc().undo()
+    })
+    const pending = doc().future
+    const event = press(field(sel), { key: 'y', ctrlKey: true })
+    expect(event.defaultPrevented).toBe(false)
+    expect(doc().future).toBe(pending)
+    expect(panel()!.x).toBe(PANEL.x)
   })
 
   it('方向键移的是光标，不是面板', () => {
@@ -195,6 +213,42 @@ describe('对照：同样的键派在 window 上，画布快捷键照常生效',
     })
     press(window, { key: 'z', metaKey: true })
     expect(panel()!.x).toBe(PANEL.x)
+  })
+
+  it.each([
+    { key: 'y', ctrlKey: true },
+    { key: 'z', ctrlKey: true, shiftKey: true },
+  ])('$key redo settles the registered field gesture before consuming history', (shortcut) => {
+    act(() => {
+      doc().commit(literal('move'), (d) => { d.objects[0].x = 99 })
+      doc().undo()
+      doc().beginTxn(literal('unmodified field gesture'))
+    })
+    let finished = 0
+    const unregister = registerGesture(() => { finished++; doc().endTxn() })
+    try {
+      expect(hasActiveGesture()).toBe(true)
+      expect(press(window, shortcut).defaultPrevented).toBe(true)
+      expect(finished).toBe(1)
+      expect(hasActiveGesture()).toBe(false)
+      expect(doc().txn).toBeNull()
+      expect(doc().future).toHaveLength(0)
+      expect(panel()!.x).toBe(99)
+    } finally { unregister() }
+  })
+
+  it('Ctrl+Y during a pointer gesture preserves the gesture and the redo entry', () => {
+    act(() => {
+      doc().commit(literal('move'), (d) => { d.objects[0].x = 99 })
+      doc().undo()
+      useInteractionStore.getState().begin('move')
+      doc().beginTxn(literal('pointer move'))
+    })
+    const pending = doc().future
+    expect(press(window, { key: 'y', ctrlKey: true }).defaultPrevented).toBe(true)
+    expect(panel()!.x).toBe(PANEL.x)
+    expect(doc().future).toBe(pending)
+    expect(doc().txn).not.toBeNull()
   })
 
   it('方向键推动面板', () => {

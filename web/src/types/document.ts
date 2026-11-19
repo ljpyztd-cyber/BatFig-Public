@@ -1,6 +1,7 @@
 /** 文档模型 —— 单位一律 mm，数组顺序即 z 序（末尾在最上）。 */
 import { t } from '@/i18n'
 import { newId } from '@/lib/id'
+import type { PanelGridSettings } from '@/lib/panelGrid'
 
 export interface ObjectBase {
   id: string
@@ -147,16 +148,18 @@ export interface PanelObject extends ObjectBase {
 export interface TextObject extends ObjectBase {
   type: 'text'
   text: string
+  /** 明确关联的面板编号；可选，旧文档文字保持独立直到一次无歧义的显式排版。 */
+  panelLabelFor?: string
   sizePt: number
   /**
    * 字体族。**可选：老文档没有它 = 从没设过 = 继承默认（衬线）**，
    * 磁盘格式不升版，导出载荷也不多字段。生效值一律经
    * `lib/typography.effectiveCanvasFamily()` 取，别处不许写第二个默认值。
    *
-   * 取值是三个通用族的闭集（`CANVAS_TEXT_FAMILIES`）——合成跑在没有
-   * matplotlib 的 Flask 进程里，画得出来的就是批准字体集合里的 Liberation 三族。
+   * 闭集（`CANVAS_TEXT_FAMILIES`）含历史通用族与本机真实 Arial / Times New Roman。
+   * 具名字体由 RenderCore 核验，预览和导出都不允许替换。
    */
-  fontFamily?: 'serif' | 'sans-serif' | 'monospace'
+  fontFamily?: 'serif' | 'sans-serif' | 'monospace' | 'Arial' | 'Times New Roman'
   /**
    * 科学文本解释档位。**可选：老文档没有它 = auto**（与升级前逐字符同样的
    * 渲染），磁盘格式不升版。
@@ -400,6 +403,8 @@ export interface FigureDocument {
   guides: Guide[]
   /** 可选的结构化布局组；旧文档没有该字段，自由排版行为完全不变 */
   layoutGroups?: LayoutGroup[]
+  /** 可选的页面面板网格；缺席时沿用已有自由排版，不在读档时添默认布局。 */
+  panelGrid?: PanelGridSettings
   /** 可选的出版规范绑定；缺省走默认 profile */
   profile?: DocumentProfile
   /** 可选的样式绑定（ADR 0081）；缺省 = 不跟随任何样式 */
@@ -421,6 +426,7 @@ export interface CanvasData {
   objects: CanvasObject[]
   guides: Guide[]
   layoutGroups?: LayoutGroup[]
+  panelGrid?: PanelGridSettings
   /** 每张画布各自的出版规范绑定；缺省走默认 profile */
   profile?: DocumentProfile
   /** 每张画布各自的样式绑定（ADR 0081）；缺省 = 不跟随任何样式 */
@@ -454,6 +460,7 @@ export function canvasToDoc(c: CanvasData): FigureDocument {
     objects: c.objects,
     guides: c.guides,
     ...(c.layoutGroups ? { layoutGroups: c.layoutGroups } : {}),
+    ...(c.panelGrid ? { panelGrid: c.panelGrid } : {}),
     ...(c.profile ? { profile: c.profile } : {}),
     ...(c.style ? { style: c.style } : {}),
   }
@@ -467,6 +474,7 @@ export function docToCanvas(doc: FigureDocument, id: string): CanvasData {
     objects: doc.objects,
     guides: doc.guides,
     ...(doc.layoutGroups ? { layoutGroups: doc.layoutGroups } : {}),
+    ...(doc.panelGrid ? { panelGrid: doc.panelGrid } : {}),
     ...(doc.profile ? { profile: doc.profile } : {}),
     ...(doc.style ? { style: doc.style } : {}),
   }
@@ -522,7 +530,7 @@ export function emptyProject(): ProjectDocument {
   const canvas: CanvasData = {
     id: newId('c'),
     name: defaultCanvasName(1),
-    page: { w: 150, h: 100 },
+    page: { w: 150, h: 100, bg: '#ffffff', transparent: false },
     objects: [],
     guides: [],
   }
@@ -547,7 +555,7 @@ export function emptyDocument(): FigureDocument {
   return {
     schema: 2,
     name: defaultDocumentName(),
-    page: { w: 150, h: 100 },
+    page: { w: 150, h: 100, bg: '#ffffff', transparent: false },
     objects: [],
     guides: [],
   }

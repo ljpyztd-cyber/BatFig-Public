@@ -67,6 +67,8 @@ function ElementQuickInner({
             ariaLabel={propLabel('color', role)}
             value={String(w.read('color') ?? '#000000')}
             onChange={(v) => w.write('color', v, true)}
+            onPreview={(v) => w.previewColor('color', v)}
+            scopeKey={`${panel.id}:${element.gid}:color`}
             onGestureEnd={w.endGesture}
           />
         )}
@@ -263,6 +265,8 @@ function TextElementActions({
           ariaLabel={translate('textBar.color', { ns: 'inspector' })}
           value={String(displayValueOf(a.valueOf('color')) ?? '#000000')}
           onChange={(v) => a.write('color', v, true)}
+          onPreview={a.previewColor}
+          scopeKey={a.colorScope}
           onGestureEnd={a.endGesture}
         />
       )}

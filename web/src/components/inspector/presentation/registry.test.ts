@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { EditableField } from '@/lib/api'
-import { controlKindOf, fieldVisible, isPercentField, presentFields } from './registry'
+import { controlKindOf, fieldVisible, isPercentField, pairedProp, presentFields } from './registry'
 
 const f = (prop: string, type: EditableField['type'] = 'number', group?: string): EditableField =>
   ({ prop, type, value: 0, ...(group ? { group } : {}) }) as EditableField
@@ -11,6 +11,22 @@ const opts = (overridden: string[] = [], values: Record<string, unknown> = {}) =
 })
 
 describe('presentFields：角色模板分桶', () => {
+  it('QuadMesh collection puts its real mapped-color fields first, with paired limits and no invented capability', () => {
+    // The real panel_d is a flat QuadMesh: engine manifest role=collection,
+    // gid=axes_0.collections_0; mapping fields carry group=颜色映射.
+    const common = [f('label', 'text'), f('edgecolor', 'color'), f('linewidth'), f('alpha'), f('visible', 'bool')]
+    const mapped = [f('cmap', 'enum', '颜色映射'), f('vmin', 'number', '颜色映射'), f('vmax', 'number', '颜色映射')]
+    const withMap = presentFields('collection', [...common, ...mapped], opts())
+    expect(withMap.primary.map((item) => item.field.prop)).toEqual([
+      'cmap', 'vmin', 'vmax', 'label', 'edgecolor', 'linewidth', 'alpha', 'visible',
+    ])
+    expect(withMap.more).toHaveLength(0)
+    expect(pairedProp('collection', 'vmin')).toBe('vmax')
+    expect(pairedProp('collection', 'vmax')).toBe('vmin')
+    const withoutMap = presentFields('collection', common, opts())
+    expect(withoutMap.primary.map((item) => item.field.prop)).toEqual(common.map((item) => item.prop))
+  })
+
   it('line：颜色/线宽/线型/marker 在首屏，alpha 在更多，zorder 在高级', () => {
     const fields = [
       f('color', 'color'), f('linewidth'), f('linestyle', 'enum'),

@@ -3,6 +3,28 @@
 > 原文出自 `src/tavotto/AGENTS.md`「渲染引擎核心机制」（2026-09-17 指导文档治理时按主题拆出，正文逐字未改）。
 > 这里是这一主题规则的**唯一全文**；`src/tavotto/AGENTS.md` 只留速查行。改规则改这里，并同步那一行。
 
+## BatFig 透明背景（2026-10-13）
+
+- `figure.transparent` 保留旧语义：只隐藏 Figure 背景 patch。
+- 新增 `figure.axes_transparent` 布尔覆盖，只隐藏二维 axes 的背景 patch（含 inset 与色条轴），
+  不隐藏数据、轴线或标签，不改 `facecolor`，不改三维 pane。显式 `false` 显示二维背景；
+  删除 override 按每个 patch 的原始可见性逐一恢复，原本隐藏的孪生轴背景不会被意外打开。
+  getter 的逐 patch 快照只留在 `originals`；manifest 的当前值与 `value_original` 始终是布尔值。
+  新面板默认透明由前端显式写入两条覆盖，旧文档不补写、不重新解释。
+- 看护：`tests/test_batfig_custom_colormap.py` 的真实 PNG、混合背景撤销、inset、冷重放及旧语义检查。
+
+## BatFig 的 Arial / Times New Roman 严格路径（2026-10-04）
+
+- 显式请求两种具名族的 Matplotlib Text 不追加 DejaVu/CJK 回退尾巴；其他字体保留上游行为。
+  `overrides.local_font_render_context` 在 FigSession 的 SVG、PNG、PDF 渲染入口核验实际字体文件的
+  family、PostScript 名、粗体/斜体脸、嵌入位及逐字形覆盖。缺字体、缺字形、实际替换均阻断。
+- 单族 MathText 在渲染上下文里核验该族 regular/italic/bold/bold-italic 四脸并关闭数学回退，支持
+  `$Li_{2}O$`、`$mAh\ g^{-1}$` 等由所选真实字体字形构成的上下标；渲染后还原临时配置。
+  同一图混用多个族的 custom MathText、外部 TeX 不在验收范围，明确报错；两族普通文字可同图混排。
+  Arial 缺少的 Unicode 上下标（例如本机 U+207B）仍报缺字，不用相似字符或其他字体替代。
+- 看护：`tests/test_batfig_csv.py`、`tests/test_batfig_times_new_roman.py` 的真实 worker 编辑/冷重放、缺字阻断与 PDF 内嵌字体程序检查。
+  CSV 初始标签是纯文本，MathText 关闭；数据/spec 与画布覆盖分别保存。
+
 - **导出 PDF / PS 一律 fonttype 42**（`figsession.export_font_context`，T-122）：matplotlib 默认的
   Type 3 把 U+00FF 之外的字符画成 XObject，像素对、文本层没有它们（`⁵ μ α ≤`……），
   期刊也拒收。改回 3 的前提是先让 `tests/test_scientific_text_matrix.py` 有别的办法绿。

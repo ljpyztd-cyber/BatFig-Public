@@ -24,6 +24,17 @@
   `multiBarDocked`，与文字栏的 `textBarCompact` 同一条 `inspectorDocked` 判据）
   浮动栏收成「计数 + 六向对齐 + 成组 + 更多」，参照 / 分布 / 等宽等高的控件让给
   `ArrangeSection`；当前参照仍由计数上的 title 与每颗对齐按钮的提示报出来。
+* **BatFig 对齐边界（2026-10-13）**也由 `arrangeStore.alignBasis` 唯一持有，默认
+  `axes`，可切到 `image`。位置对齐与分布读取 `store/canvasAlignment` 的精确
+  manifest；`lib/canvasAlignment` 合并可见绘图区，排除色条并映射裁剪、翻转、旋转。
+  没有坐标轴的已知静态图片与标注用对象边界，控件常驻说明；未知或过期几何使
+  整批操作不可用，不以显示回退补齐。首次需要几何时通过「读取坐标轴」显式请求，
+  仅选择对象不执行 runtime 脚本。等宽等高仍以整张图片尺寸计算。
+* **BatFig 图内对齐（2026-10-22）**：`alignEntries(..., {excludeColorbars: true})`
+  是对齐动作和属性栏对齐范围的共同入口；色标轴、代理元素及可确认的色标后代排除。
+  对齐区的比例调整作用于该区列出的对象。直接拖动、单独缩放与画布组手柄仍使用完整选区。
+  看护：`store/colorbarAlignment.test.tsx`。
+
 * **主选 = `selection.ids` 末位**。OverlaySvg 里主选轮廓 2 px 并挂
   `data-primary-selection`，联合框挂 `data-multi-selection-bounds`——浮动栏、e2e 与
   后续 coachmark 都锚在这两个节点上，别改名。

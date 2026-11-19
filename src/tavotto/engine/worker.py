@@ -97,6 +97,7 @@ import matplotlib.figure as mfigure  # noqa: E402
 #: safe worker 要装进私有包的引擎模块——**整条平铺 import 闭包**，一次装完
 #: （safe 档不像 native 那样要分两阶段避开 matplotlib：这里 matplotlib 本来就先 import）。
 _ENGINE_MODULES = (
+    "fontpolicy",
     "figcapture",
     "patchspec",
     "pathgeom",

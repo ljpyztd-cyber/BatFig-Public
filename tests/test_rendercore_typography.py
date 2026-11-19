@@ -48,11 +48,17 @@ def _text(**kw) -> dict:
 def test_the_family_closed_set_and_default_match_the_old_facade():
     from tavotto import pdfbackend
 
-    assert ty.CANVAS_TEXT_FAMILIES == ("serif", "sans-serif", "monospace")
+    assert ty.CANVAS_TEXT_FAMILIES == (
+        "serif",
+        "sans-serif",
+        "monospace",
+        "Arial",
+        "Times New Roman",
+    )
     assert ty.CANVAS_TEXT_FAMILIES == pdfbackend.CANVAS_TEXT_FAMILIES  # 三方同源对的第三份宿主
     assert ty.COVERAGE_MAX_CP == pdfbackend.COVERAGE_MAX_CP
     assert ty.CANVAS_TEXT_DEFAULT_FAMILY == "serif"
-    for bad in (None, "", "Times New Roman", "Arial", "宋体", 7):
+    for bad in (None, "", "Times", "Arial Narrow", "宋体", 7):
         assert ty.latin_family(bad) == "serif"
     for fam in ty.CANVAS_TEXT_FAMILIES:
         assert ty.latin_family(fam) == fam

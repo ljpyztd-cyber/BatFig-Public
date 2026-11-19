@@ -9,10 +9,12 @@ import {
   backendErrorText,
   fetchLayout,
   fetchLayoutNames,
-  saveLayout,
   type DiskDocumentSummary,
 } from '@/lib/api'
 import { knownLayoutRevision, rememberLayoutRevision } from '@/lib/layoutRevision'
+import { saveDocumentAs, settleDocumentInput } from '@/lib/namedSave'
+import { currentContentKey } from '@/lib/documentCheckpoint'
+import { currentProjectId } from '@/lib/session'
 import { normalizeLayout } from '@/lib/migrate'
 import { cn } from '@/lib/utils'
 import { openLayoutDocument } from '@/store/actions'
@@ -45,7 +47,8 @@ export function LayoutDialog() {
   const { t } = useTranslation(['dialogs', 'common'])
   const open = useUiStore((s) => s.layoutOpen)
   const setOpen = useUiStore((s) => s.setLayoutOpen)
-  const docName = useDocumentStore((s) => s.doc.name)
+  const documentId = useDocumentStore((s) => s.documentId)
+  const projectId = useProjectStore((s) => s.project?.id)
   /**
    * 文档落在哪个目录——**后端说了算**（`project_status.document_dir`）。
    * 「项目内 tavottofile/」这条规则的出处只有 `app.project_layout_dir()`，
@@ -57,7 +60,7 @@ export function LayoutDialog() {
   const intent = useUiStore((s) => s.layoutIntent)
   const saving = intent === 'save'
   const [names, setNames] = useState<string[]>([])
-  const [name, setName] = useState(docName)
+  const [name, setName] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   /**
@@ -73,18 +76,27 @@ export function LayoutDialog() {
   } | null>(null)
   const nameRef = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLUListElement>(null)
+  const dialogLife = useRef({ active: false })
 
   useEffect(() => {
+    const life = { active: open }
+    dialogLife.current = life
     if (!open) return
-    setName(docName)
+    const state = useDocumentStore.getState()
+    const pj = currentProjectId()
+    const active = () => life.active && currentProjectId() === pj
+    setName(state.namedTarget?.name ?? state.projectMeta.name)
+    setNames([])
+    setBusy(false)
     setError(null)
     setConflict(null)
     // 另存那一屏也要这份清单：撞名的裁决在后端，但「这个名字已经有了」
     // 要在用户按下按钮之前就说
-    fetchLayoutNames()
-      .then(setNames)
-      .catch((e) => setError(backendErrorText(e)))
-  }, [open, docName])
+    fetchLayoutNames(pj)
+      .then((next) => { if (active()) setNames(next) })
+      .catch((e) => { if (active()) setError(backendErrorText(e)) })
+    return () => { life.active = false }
+  }, [open, projectId, documentId, intent])
 
   // 从菜单进来时焦点直接落在用户选的那件事上。
   // 要等一帧：弹窗自己的焦点陷阱在挂载后也会抢焦点，抢早了会被它覆盖。
@@ -109,6 +121,9 @@ export function LayoutDialog() {
   const doSave = async (overwrite?: string) => {
     const stem = name.trim()
     if (!stem) return
+    const life = dialogLife.current
+    const pj = currentProjectId()
+    const current = () => life.active && currentProjectId() === pj
     setBusy(true)
     setError(null)
     setConflict(null)
@@ -116,13 +131,15 @@ export function LayoutDialog() {
       // 保存整份文档（schema 3，含全部画布）；文件名即文档名
       const store = useDocumentStore.getState()
       store.renameProject(stem)
-      const baseRevision = overwrite ?? knownLayoutRevision(stem) ?? REVISION_ABSENT
-      const res = await saveLayout(stem, useDocumentStore.getState().buildProject(), baseRevision)
-      rememberLayoutRevision(stem, res.revision)
-      setNames(await fetchLayoutNames())
+      const baseRevision = overwrite ?? knownLayoutRevision(stem, pj) ?? REVISION_ABSENT
+      const result = await saveDocumentAs(stem, baseRevision)
+      if (!current()) return
+      if (result.status === 'error') throw result.error
+      if (result.status !== 'saved') return
       useUiStore.getState().setStatus(msg('layout.saved', { name: stem }, 'dialogs'))
       setOpen(false)
     } catch (e) {
+      if (!current()) return
       const revision =
         e instanceof ApiError && e.status === 409 && e.body.code === 'external_change'
           ? e.body.revision
@@ -137,24 +154,36 @@ export function LayoutDialog() {
         setError(backendErrorText(e))
       }
     } finally {
-      setBusy(false)
+      if (current()) setBusy(false)
     }
   }
 
   const doLoad = async (target: string) => {
+    settleDocumentInput()
+    const before = useDocumentStore.getState()
+    const content = currentContentKey(before)
+    const life = dialogLife.current
+    const pj = currentProjectId()
+    const current = () => {
+      const now = useDocumentStore.getState()
+      return life.active && currentProjectId() === pj &&
+        now.documentId === before.documentId && now.loadSeq === before.loadSeq
+    }
     setBusy(true)
     setError(null)
     setConflict(null)
     try {
-      const { doc, revision } = await fetchLayout(target)
+      const { doc, revision } = await fetchLayout(target, pj)
+      settleDocumentInput()
+      if (!current() || currentContentKey(useDocumentStore.getState()) !== content) return
       // 读到了就记下基线：之后覆盖这个名字不必再打扰用户一次
-      rememberLayoutRevision(target, revision)
-      openLayoutDocument(normalizeLayout(doc, target))
+      rememberLayoutRevision(target, revision, pj)
+      if (!(await openLayoutDocument(normalizeLayout(doc, target), { name: target, revision, projectId: pj }))) return
       setOpen(false)
     } catch (e) {
-      setError(backendErrorText(e))
+      if (current()) setError(backendErrorText(e))
     } finally {
-      setBusy(false)
+      if (current()) setBusy(false)
     }
   }
 

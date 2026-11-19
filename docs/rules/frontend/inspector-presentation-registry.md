@@ -64,7 +64,7 @@
   `cmap_original`（换走之后脚本原来那张，多一个 `name`）。渐变的唯一出处
   `colormapStops.colormapGradient(name, facts)`：事实优先、其次离线表、都没有才回落
   「?」；离散的画硬边色块。`custom` 的显示成「自定义」（原名留在可达名与 title 里），
-  它**不是可写的取值**：当前那一格点了什么都不发生（`data-cmap-entry="keep"`），
+  脚本自定义色图的名字**不是可写的取值**：当前那一格点了什么都不发生（`data-cmap-entry="keep"`），
   「脚本原样」那一格（`restore`）走 `clearOverrides`，清的是 `lib/colormapAlias.
   colormapAliasGids()` 算出的整组 gid——色条 ↔ mappable ↔ 色阶兄弟（`scale_gids`）是
   同一份色图状态的一组 gid，override 落在哪一边取决于用户从哪边改的；给组里**任何一块**上色的色条都算进组
@@ -73,6 +73,10 @@
   （`sharedCmapFacts`，与 `sharedMarkerShape` 同一条纪律）。色条的方向 / 延伸小色条
   预览同样吃 `cmap_current`（`cmapFacts`），不再对自定义色图退回灰阶。
   看护 `colorScalePanels.test.tsx` 的「脚本自定义的色图」一组。
+  BatFig 的 DIY 编辑器则提交可移植的 `{type:'custom', colors, positions}`，3–32 个真实
+  RGB 色点；它是明确可写的对象值，与脚本自定义名称分开处理。预览优先读对象里的
+  精确色点。`setColormaps` 在一次历史内合并共享色阶的别名、清理竞争覆盖，优先
+  保留一个可编辑色条作为写入者；重复选择相同值不创建历史或重新渲染。
 * **字体下拉并上本机字体族（2026-09-13）**：引擎按元素发的 `fontfamily.options` 只有
   首选项，本机的几百个族在 manifest **顶层** `font_families`（整份只发一次）。并表
   **只在 `lib/typography.withMachineFamilies` 一处**——`useFigureTypography` 的 `fieldOf`

@@ -307,6 +307,7 @@ export function materializePaste(payload: ClipPayload, resolved: MissingAsset[])
   const relink = new Map(resolved.map((m) => [m.fileId, m.relinkTo]))
 
   const idMap = new Map<string, string>()
+  const panelIds = new Map<string, string>()
   const groupMap = new Map<string, string>()
   const clones: CanvasObject[] = []
   let skipped = 0
@@ -329,6 +330,7 @@ export function materializePaste(payload: ClipPayload, resolved: MissingAsset[])
       copy.groupId = next
     }
     if (copy.type === 'panel') {
+      panelIds.set(src.id, nid)
       const target = relink.get(copy.fileId)
       if (target) {
         const info = assets[target]
@@ -361,6 +363,15 @@ export function materializePaste(payload: ClipPayload, resolved: MissingAsset[])
   if (!clones.length) {
     useUiStore.getState().setStatus(note('pasteNothing'), 'error')
     return
+  }
+
+  // Only a successfully pasted panel is a valid new label target. A skipped or
+  // absent panel must not leave a copied label attached to the source document.
+  for (const copy of clones) {
+    if (copy.type !== 'text' || copy.panelLabelFor === undefined) continue
+    const target = panelIds.get(copy.panelLabelFor)
+    if (target) copy.panelLabelFor = target
+    else delete copy.panelLabelFor
   }
 
   const carriedGroups = payload.layoutGroups

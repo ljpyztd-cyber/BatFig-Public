@@ -6,6 +6,7 @@ import { fileURLToPath, URL } from 'node:url'
 const BACKEND = 'http://127.0.0.1:5089'
 
 export default defineConfig({
+  cacheDir: '../codex-files/web-cache/vite',
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: {

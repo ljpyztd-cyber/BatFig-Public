@@ -326,7 +326,7 @@ const errorBody = (res: Response): Promise<Record<string, unknown>> =>
  * `pj` 显式给出时用它，不用全局当前项目：见 `session.apiUrlFor` 的说明——
  * 排队稍后才发出的写入，属于**排队那一刻**的项目。`undefined` = 用全局的。
  */
-async function jsonFetch<T>(url: string, init?: RequestInit, pj?: string | null): Promise<T> {
+export async function jsonFetch<T>(url: string, init?: RequestInit, pj?: string | null): Promise<T> {
   const res =
     pj === undefined
       ? await fetch(apiUrl(url), withProject(init))
@@ -605,8 +605,8 @@ export const panelSrc = (
 
 /* ----------------------------- 布局存取 ----------------------------------- */
 
-export const fetchLayoutNames = () =>
-  jsonFetch<{ layouts: string[] }>('/api/layouts').then((r) => r.layouts)
+export const fetchLayoutNames = (pj?: string | null) =>
+  jsonFetch<{ layouts: string[] }>('/api/layouts', undefined, pj).then((r) => r.layouts)
 
 /** 读到的一份画布文件：`revision` 来自响应头，是后续覆盖它的基线 */
 export interface FetchedLayout {
@@ -614,8 +614,10 @@ export interface FetchedLayout {
   revision: string | null
 }
 
-export async function fetchLayout(name: string): Promise<FetchedLayout> {
-  const res = await fetch(apiUrl(`/api/layouts/${encodeURIComponent(name)}`), withProject())
+export async function fetchLayout(name: string, pj?: string | null): Promise<FetchedLayout> {
+  const path = `/api/layouts/${encodeURIComponent(name)}`
+  const res = pj === undefined ? await fetch(apiUrl(path), withProject())
+    : await fetch(apiUrlFor(path, pj), withProjectFor(undefined, pj))
   if (!res.ok) {
     let body: Record<string, unknown> = {}
     try {
@@ -641,6 +643,7 @@ export const saveLayout = (
   name: string,
   doc: FigureDocument | ProjectDocument,
   baseRevision?: string,
+  pj?: string | null,
 ) =>
   jsonFetch<{ ok: boolean; revision: string | null }>(
     `/api/layouts/${encodeURIComponent(name)}` +
@@ -650,6 +653,7 @@ export const saveLayout = (
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(doc),
     },
+    pj,
   )
 
 /* --------------------------- 文档自动保存（磁盘） ---------------------------- */
@@ -1011,7 +1015,7 @@ export type ExportObject =
       color: string
       align: string
       /** 三个通用族之一；缺席 = 继承默认（衬线），后端缺省与它一致 */
-      font_family?: 'serif' | 'sans-serif' | 'monospace'
+      font_family?: 'serif' | 'sans-serif' | 'monospace' | 'Arial' | 'Times New Roman'
       /** 科学文本解释；缺席 = auto，后端缺省与它一致 */
       interpretation?: 'auto' | 'scientific'
       underline?: boolean

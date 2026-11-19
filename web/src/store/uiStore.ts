@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { DEFAULT_GRID_SIZE, validGridSize } from '@/lib/gridPrefs'
 import { pushRecent } from '@/lib/commandRanking'
 import type { UiMessage } from '@/i18n'
 import { emitActivity } from '@/lib/activity'
@@ -107,7 +108,7 @@ interface Persisted {
   showGrid: boolean
 }
 
-export const PREFS_VERSION = 2
+export const PREFS_VERSION = 3
 
 const DEFAULTS: Persisted = {
   prefsVersion: PREFS_VERSION,
@@ -117,7 +118,7 @@ const DEFAULTS: Persisted = {
   rightWidth: RIGHT_DEFAULT,
   leftPinned: false,
   rightPinned: true,
-  gridSize: 10,
+  gridSize: DEFAULT_GRID_SIZE,
   snapEnabled: true,
   snapToGrid: false,
   snapToGuides: true,
@@ -173,6 +174,8 @@ function readPersisted(): Persisted {
     if (from < 2 && (state.rightWidth ?? 0) <= 320) {
       state = { ...state, rightWidth: RIGHT_DEFAULT }
     }
+    // v2 → v3：用户要求默认开启画布网格，只迁移一次；其后手动关闭照常持久化。
+    if (from < 3) state = { ...state, showGrid: true }
     state = { ...state, prefsVersion: PREFS_VERSION }
   }
   // 版本号相同也要收进合法区间：手工改过 localStorage / 未来回滚都不该让
@@ -181,6 +184,7 @@ function readPersisted(): Persisted {
     ...state,
     rightWidth: Math.min(RIGHT_MAX, Math.max(RIGHT_MIN, state.rightWidth)),
     leftWidth: Math.min(LEFT_MAX, Math.max(LEFT_MIN, state.leftWidth)),
+    gridSize: validGridSize(state.gridSize),
   }
   // 偏好在**响应式裁剪之前**定格：下面那一刀是「这台机器此刻的窗口太窄」，
   // 不是用户的意思。
@@ -548,7 +552,7 @@ export const useUiStore = create<UiState>((set, get) => ({
     persist(get())
   },
   setCanvasPref: (patch) => {
-    set(patch as Partial<UiState>)
+    set({ ...patch, ...(patch.gridSize !== undefined ? { gridSize: validGridSize(patch.gridSize) } : {}) } as Partial<UiState>)
     persist(get())
   },
   setShowRulers: (showRulers) => {

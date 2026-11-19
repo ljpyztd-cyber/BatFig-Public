@@ -69,6 +69,10 @@ import { msg } from '@/i18n'
 export function App() {
   const phase = useProjectStore((s) => s.phase)
 
+  // 当前文档在 Project Picker 上仍然存在；自动保存和浏览器关闭保护随 App 存活。
+  // 恢复/切项目会递增 loadSeq，订阅不会把载入当成新编辑。
+  useEffect(() => startAutosave(), [])
+
   useEffect(() => {
     void useProjectStore.getState().init()
     // 静默取一次版本状态（有新版本才弹 UpdateNoticeDialog、点顶栏圆点）。
@@ -146,7 +150,6 @@ function Workspace() {
       // 只挂在其中一个上就会有一半的时候拿着空清单去同步（= 什么都没做）
       syncLoadedDocument()
     })
-    const stopAutosave = startAutosave()
     // 挂载之后再换进来的文档（教程重开 / 载入画布文件 / 最近文档 …）同样要对账
     const stopLoadSync = startDocumentLoadSync()
     const stopPrune = subscribePruneSelection()
@@ -198,7 +201,6 @@ function Workspace() {
     window.addEventListener('tavotto:autosave-error', onAutosaveError)
     window.addEventListener('tavotto:doc-conflict', onDocConflict)
     return () => {
-      stopAutosave()
       stopLoadSync()
       stopPrune()
       stopCheckpoints()

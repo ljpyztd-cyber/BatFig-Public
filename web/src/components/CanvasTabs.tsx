@@ -4,7 +4,9 @@ import { ChevronDown, Plus, X } from '@/components/ui/icons'
 import { ICON_SIZE } from '@/components/ui/Icon'
 import { useFlip } from '@/lib/motion'
 import { cn } from '@/lib/utils'
-import { activateCanvas, createCanvasAndActivate } from '@/store/canvasSession'
+import { requestLeaveDocument } from '@/lib/closeGuard'
+import { hasPendingCanvasChanges } from '@/lib/namedSave'
+import { activateCanvas, closeCanvasWithSession, createCanvasAndActivate } from '@/store/canvasSession'
 import { useDocumentStore } from '@/store/documentStore'
 import { Button } from './ui/Button'
 import { TextInput } from './ui/Input'
@@ -23,7 +25,10 @@ export function CanvasTabs() {
   const activeId = useDocumentStore((s) => s.activeCanvasId)
   const canvases = useDocumentStore((s) => s.canvases)
   const activeName = useDocumentStore((s) => s.doc.name)
-  const dirty = useDocumentStore((s) => s.dirty)
+  // Subscribe to the content and checkpoint, including inactive canvas changes.
+  useDocumentStore((s) => s.doc)
+  useDocumentStore((s) => s.savedCheckpoint)
+  useDocumentStore((s) => s.txn)
   const [renaming, setRenaming] = useState<string | null>(null)
   const dragFrom = useRef<number | null>(null)
   // 重排是在 drop 那一刻整排换位的（拖动中只有一条落点提示线），
@@ -57,7 +62,7 @@ export function CanvasTabs() {
             index={i}
             name={nameOf(id)}
             active={id === activeId}
-            dirty={id === activeId && dirty}
+            dirty={hasPendingCanvasChanges(id)}
             closable={openTabs.length > 1}
             renaming={renaming === id}
             onActivate={() => activate(id)}
@@ -66,7 +71,10 @@ export function CanvasTabs() {
               setRenaming(null)
               if (name) useDocumentStore.getState().renameCanvas(id, name)
             }}
-            onClose={() => useDocumentStore.getState().closeCanvasTab(id)}
+            onClose={() => {
+              void requestLeaveDocument({ kind: 'canvas', canvasId: id, name: nameOf(id) })
+                .then((proceed) => { if (proceed) closeCanvasWithSession(id) })
+            }}
             dragFrom={dragFrom}
             dragOver={dragOver === i && dragFrom.current !== i}
             setDragOver={setDragOver}
@@ -155,6 +163,7 @@ function TabItem({
   return (
     <div
       role="tab"
+      data-canvas-tab={id}
       data-flip-id={id}
       aria-selected={active}
       tabIndex={0}
@@ -222,6 +231,7 @@ function TabItem({
       )}
       {closable && (
         <button
+          data-close-canvas={id}
           aria-label={t('tabs.closeTab', { name })}
           onClick={(e) => {
             e.stopPropagation()

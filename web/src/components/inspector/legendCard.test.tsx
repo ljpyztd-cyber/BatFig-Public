@@ -771,6 +771,7 @@ describe('选中图例项', () => {
       const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!
       setter.call(color!, '#123456')
       color!.dispatchEvent(new Event('input', { bubbles: true }))
+      color!.dispatchEvent(new Event('change', { bubbles: true }))
     })
     expect(overrideOf('axes_0.legend.texts_0', 'handle_color')).toBe('#123456')
     expect(host.querySelector('[data-binding]')?.getAttribute('data-binding')).toBe('custom')

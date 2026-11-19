@@ -74,11 +74,55 @@
     "zDown": "下移一层",
     "zTop": "置于顶层",
     "zUp": "上移一层",
-    "zorderLabel": "层级"
+    "zorderLabel": "层级",
+    "basisLabel": "对齐边界",
+    "basisAxes": "坐标轴",
+    "basisImage": "图片边界",
+    "basisHint": "色标不参与坐标轴对齐，可单独调整。无坐标轴的图片和标注使用对象边界；等宽等高仍按图片尺寸。",
+    "axesSyncing": "坐标轴布局尚未就绪。读取坐标轴后重试，或切换为图片边界。",
+    "readAxes": "读取坐标轴"
   },
   "assistantRunningTip": "助手运行中",
   "autoHideAria": "右栏自动收起中，点击改为常驻",
   "autoHideTip": "清空选择后自动收起。点击改为常驻。",
+  "panelGrid": {
+    "title": "整画布网格拼图",
+    "open": "统一拼版",
+    "summary_other": "{{count}} 张图 · {{rows}} 行 × {{cols}} 列",
+    "apply": "应用到整张画布",
+    "columns": "列数",
+    "ratio": "单元比例",
+    "ratioPreset": "按 {{ratio}} 单元格重新拼图",
+    "ratioHint": "坐标轴模式统一主绘图区比例，右侧色标与外置图例不占轴框。固定数据比例的图保持原形；图片模式保留整图比例。",
+    "preparing": "正在调整并验证绘图区与字号…",
+    "changed": "排版期间画布已被修改；请重新应用。",
+    "geometry_pending": "精确坐标轴边界尚未就绪；请先读取坐标轴。",
+    "render_failed": "主绘图区重新渲染失败；画布未修改，请查看渲染提示后重试。",
+    "geometry_mismatch": "渲染后的轴框与目标比例不一致；画布未修改。",
+    "font_size_invalid": "目标轴文字字号无效；请填写有效的成品字号。",
+    "font_size_unsupported": "有小图无法实现此成品字号，或轴文字已锁定；整批未应用。",
+    "font_size_mismatch": "实际渲染字号与目标成品字号不一致；整批未应用。",
+    "font_layout_failed": "轴文字在当前图幅中放不下，整批未应用；请增大画布或减小字号后重试。",
+    "preserved_other": "拼版完成；{{count}} 张特殊比例或暂不支持重排的图保留原形。",
+    "gap": "横竖间距",
+    "axisFontSize": "轴文字字号",
+    "axisFontHint": "统一横纵轴刻度数字和轴标题，按成品字号，并为轴文字留出边距；色标、图例和编号字号不变。",
+    "gapPreset": "按 {{gap}} mm 横竖间距重新拼图",
+    "gapValue": "{{gap}} mm",
+    "margin": "画布边距",
+    "basis": "对齐边界",
+    "columnAlign": "同列对齐",
+    "rowAlign": "同行对齐",
+    "quickHint": "比例、间距预设及对齐选项点击即应用。数值输入后点「应用到整张画布」。",
+    "applied_other": "已按网格排列 {{count}} 张图",
+    "history": "整画布网格拼图",
+    "pending": "坐标轴边界尚未就绪；请读取坐标轴，或切换为图片边界。",
+    "locked": "画布中有锁定的图片；解锁后再应用整画布拼图。",
+    "group": "画布中有已成组的图片；解除分组后再应用整画布拼图。",
+    "size": "当前画布放不下这套布局；请减小间距或边距，或增大画布。",
+    "invalid": "布局设置无效，请检查列数、比例、间距和边距。",
+    "empty": "添加图片后即可应用网格拼图。"
+  },
   "canvas": {
     "allOff": "全部关闭",
     "background": "背景",
@@ -135,7 +179,10 @@
     "swap": "横竖交换",
     "transparent": "透明",
     "transparentBg": "透明背景",
-    "viewAids": "查看辅助"
+    "viewAids": "查看辅助",
+    "gridDensity": "网格密度",
+    "gridDensityHint": "间距越小网格越密；只影响编辑辅助，不进入导出。",
+    "gridPreset": "{{size}} mm"
   },
   "closePanel": "关闭右侧面板",
   "control": {
@@ -193,7 +240,20 @@
       "leftCenter": "左侧中"
     },
     "tickSpineDiagramHint": "点四条边切换刻度线与边框",
-    "legendBestShort": "自动"
+    "legendBestShort": "自动",
+    "diyName": "DIY 色图",
+    "diyTitle": "DIY 热图配色",
+    "diyHint": "选择至少 3 个颜色点，设置位置或套用配色组合。点击应用后，热图和色条同步更新。",
+    "diyApply": "应用配色",
+    "diyStop": "色点 {{index}}",
+    "diyColor": "色点 {{index}} 颜色",
+    "diyPosition": "色点 {{index}} 位置",
+    "diyRemove": "移除色点 {{index}}",
+    "diyRemoveLabel": "移除",
+    "diyAdd": "添加色点",
+    "diyReverse": "反转色序",
+    "diyEven": "均匀分布",
+    "diyInvalid": "需要 3–32 个有效颜色点；位置须递增，首尾为 0% 和 100%。"
   },
   "element": {
     "absentAppearance": "此元素由脚本生成，当前版本暂不支持在此编辑。",
@@ -201,7 +261,7 @@
     "alignBaseline": "基准",
     "alignBaselineSize": "等宽/等高基准",
     "alignHdist": "水平等距（≥3）",
-    "alignHint": "子图调整的是它在图内的占比，文字与图例调整的是锚点；两者都不改变这张图在画布上的尺寸。",
+    "alignHint": "子图调整的是它在图内的占比，文字与图例调整的是锚点；两者都不改变这张图在画布上的尺寸。色标不参与对齐，可单独调整。",
     "alignHintAnnotations": "画布标注跟着同一条基线排，位置改在画布对象上。",
     "alignHintGroup": "拖画布上的组包围框手柄也能成组缩放。",
     "alignInvalid": "选区里的元素几何异常，对齐已取消。",
@@ -601,7 +661,8 @@
     "toggleBold": "切换加粗",
     "toggleItalic": "切换斜体",
     "toggleUnderline": "切换下划线",
-    "transformCase": "转换大小写"
+    "transformCase": "转换大小写",
+    "setPanelBackground": "修改图片背景"
   },
   "lock": "锁定",
   "locked": "已锁定",
@@ -671,7 +732,9 @@
     "restore": "恢复",
     "replaceAction": "选择…",
     "cropRow": "取景",
-    "fitRow": "适配"
+    "fitRow": "适配",
+    "transparentBackground": "图片背景透明",
+    "transparentBackgroundHint": "去除可编辑图像的外底和二维坐标区底色；白色画布仍保留。"
   },
   "panelLabel": "右侧面板",
   "pinnedAria": "右栏常驻，点击改为自动收起",
@@ -813,7 +876,8 @@
     "yscale": "Y 轴缩放",
     "zorder": "堆叠层级",
     "loc_anchor": "锚点",
-    "title": "标题"
+    "title": "标题",
+    "axes_transparent": "透明坐标区背景"
   },
   "propByRole": {
     "bar": {
@@ -967,7 +1031,13 @@
     "superscript": "上标",
     "superscriptTitle": "上标：选中一段再点（{{key}}）",
     "title": "文字",
-    "underline": "下划线"
+    "underline": "下划线",
+    "symbols": "符号与单位",
+    "exactFontDefaultText": "Text",
+    "exactFontSourceEditor": "编辑原文（确认后显示 {{family}} 预览）",
+    "exactFontPreviewLoading": "正在生成 {{family}} 预览…",
+    "exactFontPreviewFailed": "{{family}} 预览未生成：{{error}}",
+    "exactFontUnavailable": "本机 {{family}} 字体或所选字重、字形不可用，无法核验预览和导出。请安装真实字体后重启服务，不会替换为其他字体。"
   },
   "textActions": {
     "caseTitle": "大小写转换",
@@ -1017,8 +1087,9 @@
     "color": "颜色",
     "font": "字体",
     "fontMissingHint": "这台电脑没装这个字体，图上用的是别的字体。换一个可用的字体，或装上它。",
-    "fontMissingTag": "（未安装）",
-    "size": "字号"
+    "fontMissingTag": "（不可用）",
+    "size": "字号",
+    "fontMissingExactHint": "{{family}} 或所选字重、字形不可用。请安装真实字体或选择可用的字体；不会静默替换。"
   },
   "tick": {
     "axisSwitch": "选择要配置的轴",

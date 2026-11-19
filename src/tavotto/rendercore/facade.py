@@ -34,7 +34,9 @@ U10 起唯一实现，ADR 0067 / 0072）。
 from __future__ import annotations
 
 import atexit
+import base64
 import dataclasses
+import math
 import shutil
 import tempfile
 import threading
@@ -42,6 +44,7 @@ from pathlib import Path
 from typing import Callable
 
 from .. import pixelmetrics
+from ..engine.config import data_dir
 from . import BACKEND_NAME, BACKEND_VERSION, banded, ir, plan, raster, rasterio, typography
 from .fonts import FontsUnavailable
 from .hbshaper import CandidatePackagesMissing, HbFaceProvider
@@ -238,7 +241,7 @@ def coverage_ranges() -> dict:
     prov = provider()
     faces = [
         prov.face_for(family, bold, italic)
-        for family in CANVAS_TEXT_FAMILIES
+        for family in typography.GENERIC_TEXT_FAMILIES
         for bold in (False, True)
         for italic in (False, True)
     ]
@@ -248,6 +251,153 @@ def coverage_ranges() -> dict:
         "primary": glyphplan.ranges_of(lambda cp: all(f.covers(cp) for f in faces), lo, hi),
         "cjk": glyphplan.ranges_of(typography.coverage(serif).cjk, lo, hi),
         "fallback": [],
+    }
+
+
+def canvas_font_status(family: str = "Arial") -> dict:
+    """Local named-font capability; no paths or font bytes leave the backend."""
+    from .. import glyphplan
+    from .fonts import local_font_records
+
+    try:
+        records = local_font_records(family)
+    except FontsUnavailable as exc:
+        return {
+            "family": family,
+            "available": False,
+            "faces": [],
+            "code": exc.code,
+            "error": str(exc),
+            "params": exc.params,
+        }
+    return {
+        "family": family,
+        "available": True,
+        "faces": [
+            {
+                "bold": r.approved.bold,
+                "italic": r.approved.italic,
+                "postscript_name": r.info.postscript_name,
+                "sha256": r.approved.sha256,
+                "primary": glyphplan.ranges_of(r.covers, 0x20, COVERAGE_MAX_CP),
+            }
+            for r in records.values()
+        ],
+    }
+
+
+def _text_preview_bounds(t: dict, fs: typography.FaceSet) -> tuple[float, float, float, float]:
+    """Ink plus object bounds in pt, including italic/mark/underline/border overflow.
+
+    The pen and cluster rise follow pdfwriter._text_stream, including its ActualText
+    cluster convention. Extents only enlarge the raster crop, never move the text
+    relative to its semantic object box. Two pixels of transparent bleed avoid an
+    antialiased edge being cut at the crop boundary.
+    """
+    left, top, right, bottom = 0.0, 0.0, mm2pt(t["w_mm"]), mm2pt(t["h_mm"])
+    if t.get("border_color"):
+        half = max(float(t.get("border_pt") or 0.75), 0.05) / 2
+        left -= half
+        top -= half
+        right += half
+        bottom += half
+    block = typography.layout_text(t, fs)
+    if block is not None:
+        for line in block.lines:
+            pen = line.x
+            for piece in line.pieces:
+                k = piece.size / piece.face.resource.units_per_em
+                glyphs = piece.glyphs
+                i = 0
+                while i < len(glyphs):
+                    j = i + 1
+                    while j < len(glyphs) and glyphs[j].text == "":
+                        j += 1
+                    for glyph in glyphs[i:j]:
+                        yoff = 0 if piece.actual_text is not None else glyphs[i].y_offset
+                        rise = piece.rise + yoff * k
+                        ext = piece.face.glyph_extents(glyph.gid)
+                        if ext is not None:
+                            xb, yb, width, height = ext
+                            x = pen + (glyph.x_offset + xb) * k
+                            y = line.baseline - rise - yb * k
+                            left, right = min(left, x), max(right, x + width * k)
+                            top, bottom = min(top, y), max(bottom, y - height * k)
+                        pen += glyph.x_advance * k
+                    i = j
+            if block.underline:
+                half = max(block.size * 0.06, 0.3) / 2
+                y = line.baseline + block.size * 0.11
+                left, right = min(left, line.x), max(right, line.x + line.width)
+                top, bottom = min(top, y - half), max(bottom, y + half)
+    scale = 288 / 72
+    return (
+        (math.floor(left * scale) - 2) / scale,
+        (math.floor(top * scale) - 2) / scale,
+        (math.ceil(right * scale) + 2) / scale,
+        (math.ceil(bottom * scale) + 2) / scale,
+    )
+
+
+def canvas_text_preview(obj: dict) -> dict:
+    """Named-font preview uses the export layout and canonical PDF raster pipeline.
+
+    Rotation/position are handled by the canvas. The returned dimensions represent
+    the object box; height follows the same wrap/line-height contract as export.
+    """
+    t = dict(obj, type="text", x_mm=0.0, y_mm=0.0, rotation=0, rotation_deg=0, rotate=0)
+    family = t.get("font_family")
+    if family not in typography.LOCAL_FONT_FAMILIES:
+        raise ValueError("此预览接口只接受已登记的真实本机字体。")
+    size = float(t.get("size_pt", 9))
+    pad = float(t.get("padding_mm") or 0)
+    line_h = float(t.get("line_height") or 1.25)
+    width = float(t["w_mm"])
+    raw = t.get("text", "")
+    if (
+        not isinstance(raw, str)
+        or len(raw) > 4096
+        or not all(math.isfinite(n) for n in (size, pad, line_h, width))
+        or not 1 <= size <= 144
+        or not 0.5 <= line_h <= 4
+        or not 0 < width <= 500
+        or not 0 <= pad < width / 2
+    ):
+        raise ValueError("文字预览内容或尺寸超出范围。")
+    text = typography.local_font_layout_text(raw)
+    from .. import richtext
+
+    fs = _faces(family, bool(t.get("bold")), bool(t.get("italic")))
+    lines = typography.break_lines(
+        text,
+        fs,
+        size,
+        mm2pt(float(t["w_mm"]) - 2 * pad),
+        str(t.get("interpretation") or richtext.DEFAULT_INTERPRETATION),
+    )
+    height = max(1.0, len(lines) * size * line_h * 25.4 / 72 + 2 * pad)
+    if height > 500 or width * height * (288 / 25.4) ** 2 > 16_000_000:
+        raise ValueError("文字预览像素预算超出范围。")
+    t["h_mm"] = height
+    left, top, right, bottom = _text_preview_bounds(t, fs)
+    point_mm = 25.4 / 72
+    image_width = (right - left) * point_mm
+    image_height = (bottom - top) * point_mm
+    if image_width * image_height * (288 / 25.4) ** 2 > 16_000_000:
+        raise ValueError("文字预览含文字溢出后超过像素预算。")
+    t.update(x_mm=-left * point_mm, y_mm=-top * point_mm)
+    with Canvas(image_width, image_height, transparent=True) as canvas:
+        canvas.place(t, 288, lambda o, d: None)
+        png = raster.encode_png(canvas._raster(288))
+    return {
+        "png_base64": base64.b64encode(png).decode("ascii"),
+        "width_mm": float(t["w_mm"]),
+        "height_mm": height,
+        "image_width_mm": image_width,
+        "image_height_mm": image_height,
+        "offset_x_mm": left * point_mm,
+        "offset_y_mm": top * point_mm,
+        "font_family": family,
     }
 
 
@@ -449,7 +599,9 @@ class Canvas:
 
     def _tmp_dir(self) -> Path:
         if self._tmp is None:
-            self._tmp = Path(tempfile.mkdtemp(prefix="tavotto-canvas-"))
+            root = data_dir() / "canvas-tmp"
+            root.mkdir(parents=True, exist_ok=True)
+            self._tmp = Path(tempfile.mkdtemp(prefix="tavotto-canvas-", dir=root))
         return self._tmp
 
     def _canonical_pdf(self) -> Path:

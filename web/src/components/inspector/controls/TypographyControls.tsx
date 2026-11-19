@@ -79,7 +79,7 @@ export function TypographyControls({
   return (
     <div className={cn('flex flex-col gap-1.5', className)}>
       {(family || size) && (
-      <div className="flex gap-2">
+      <div className="flex flex-col gap-1.5">
       {family && (
         <Anchor adapter={adapter} prop="fontFamily" className="min-w-0 flex-1">
           <FontFamilyRow
@@ -171,6 +171,8 @@ export function TypographyControls({
             mixed={colorVal.kind === 'mixed'}
             onChange={(v) => adapter.write('color', v, true)}
             onGestureEnd={adapter.endGesture}
+            onPreview={adapter.previewColor}
+            scopeKey={adapter.colorScope}
             overridden={dirty('color')}
             onReset={reset('color')}
           />

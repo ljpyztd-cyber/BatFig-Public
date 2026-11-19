@@ -315,6 +315,27 @@ describe('不按 ⌥ 时的命中：与轮换之前逐位相同', () => {
     await press([0.9 - 4 / LAYOUT.width, 0.5]) // 右边框内侧带
     expect(livePanel().overrides.length).toBeGreaterThan(0)
   })
+
+  it.each(['ctrlKey', 'metaKey', 'shiftKey'] as const)(
+    '%s selects across the tick hit zone without changing the figure', async (modifier) => {
+      await mount()
+      useUiStore.getState().setSelectedGids(['axes_0'])
+      await press([0.9 - 4 / LAYOUT.width, 0.5], { [modifier]: true })
+      expect(selected()).toEqual(['axes_0', 'axes_1'])
+      expect(livePanel().overrides).toEqual([])
+      expect(useDocumentStore.getState().past).toHaveLength(0)
+      await press([0.9 - 4 / LAYOUT.width, 0.5], { [modifier]: true })
+      expect(selected()).toEqual(['axes_0'])
+    },
+  )
+
+  it('Ctrl + Alt adds the hit instead of cycling to its twin', async () => {
+    await mount()
+    useUiStore.getState().setSelectedGids(['axes_0'])
+    await press(OVERLAP, { ctrlKey: true, altKey: true })
+    expect(selected()).toEqual(['axes_0', 'axes_1'])
+    expect(livePanel().overrides).toEqual([])
+  })
 })
 
 /* --------------------------- B. ⌥ 点击能换到 twin --------------------------- */

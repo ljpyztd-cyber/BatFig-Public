@@ -1,6 +1,8 @@
 import { create } from 'zustand'
 import { emitActivity } from '@/lib/activity'
 import { newId } from '@/lib/id'
+import { requestLeaveDocument } from '@/lib/closeGuard'
+import { currentContentKey } from '@/lib/documentCheckpoint'
 import {
   armNoProjectRecovery,
   backendErrorMsg,
@@ -71,8 +73,8 @@ export interface ProjectState {
   /** 启动时探测一次；SSE 断线重连后也可复查 */
   init: () => Promise<void>
   refreshRecent: () => Promise<void>
-  /** 打开/切换项目：后端切换成功后冲刷并重置前端会话状态 */
-  open: (path: string, create?: boolean) => Promise<ProjectStatus>
+  /** 打开/切换项目；null = 用户取消，或请求在途时原文档已变化。 */
+  open: (path: string, create?: boolean) => Promise<ProjectStatus | null>
   /**
    * 后端**已经**打开了一个项目（`/api/projects/open` 之外的入口，比如教程的
    * `/api/tutorial/open`）：认领它并做与 `open` 完全相同的前端换代。
@@ -88,7 +90,7 @@ export interface ProjectState {
        */
       prepareDocument?: () => Promise<void>
     },
-  ) => Promise<ProjectStatus>
+  ) => Promise<ProjectStatus | null>
   /**
    * 收藏 / 取消收藏：**轮到执行时**按最新的 `pinned` 决定 add 还是 remove——前一次
    * 还没回来时连点第二下，界面还显示「没收藏」，点击那一刻定的话两下都是 add。
@@ -106,11 +108,12 @@ export interface ProjectState {
    * 请求在路上时 `switching` 就亮着，后点的别的项目排在它后面，按点击顺序落地（Codex #550：
    * 只把认领排队的话，教程请求还在路上时点的最近项目会先进队，随后教程的认领把它换掉）。
    * `fn` 拿到的 `adopt` 直接认领、**不再排队**——在事务里调 `adoptOpenedProject` 会排在
-   * 自己后面，永远等不到。
+   * 自己后面，永远等不到。离开保护在队列里只问一次，取消返回 null，fn 不执行。
+   * 请求回包后先问 stillCurrent，避免把等待期间的新编辑/新文档换掉；adopt 也会复验。
    */
   switchTransaction: <T>(
-    fn: (adopt: ProjectState['adoptOpenedProject']) => Promise<T>,
-  ) => Promise<T>
+    fn: (adopt: ProjectState['adoptOpenedProject'], stillCurrent: () => boolean) => Promise<T>,
+  ) => Promise<T | null>
   remove: (path: string) => Promise<void>
   /** 一次从最近列表移除多条（失效项分组的「全部移除」）；同样不删磁盘内容 */
   removeMany: (paths: string[]) => Promise<void>
@@ -304,10 +307,28 @@ export const useProjectStore = create<ProjectState>((set, get) => {
 
   /** 排进切换队列；排队 + 执行期间 `switching` 一直亮着 */
   let inFlight = 0
-  const runSwitch = <T,>(fn: () => Promise<T>): Promise<T> => {
+  const runSwitch = <T,>(
+    fn: (adopt: ProjectState['adoptOpenedProject'], stillCurrent: () => boolean) => Promise<T>,
+    name?: string,
+  ): Promise<T | null> => {
     inFlight += 1
     set({ switching: true })
-    return switchQueue(fn).finally(() => {
+    return switchQueue(async () => {
+      // 轮到自己才检查当前文档；前一个排队的切换可能已换了项目。启动 init 不走这里。
+      if (!(await requestLeaveDocument({ kind: 'project', ...(name ? { name } : {}) }))) return null
+      const source = useDocumentStore.getState()
+      const pj = currentProjectId()
+      const content = currentContentKey(source)
+      const stillCurrent = () => {
+        const now = useDocumentStore.getState()
+        return currentProjectId() === pj && now.documentId === source.documentId &&
+          now.loadSeq === source.loadSeq && currentContentKey(now) === content
+      }
+      // 请求发出后用户仍可能编辑；旧响应不得盖掉新内容，也不代替用户再次确认。
+      const adopt: ProjectState['adoptOpenedProject'] = (status, opts) =>
+        stillCurrent() ? adoptNow(status, opts) : Promise.resolve(null)
+      return fn(adopt, stillCurrent)
+    }).finally(() => {
       inFlight -= 1
       if (inFlight === 0) set({ switching: false })
     })
@@ -399,11 +420,11 @@ export const useProjectStore = create<ProjectState>((set, get) => {
   },
 
   open: (path, create = false) =>
-    runSwitch(async () => adoptNow(await openProjectApi(path, create))),
+    runSwitch(async (adopt) => adopt(await openProjectApi(path, create)), path.split(/[/\\]/).filter(Boolean).pop()),
 
-  adoptOpenedProject: (status, opts) => runSwitch(() => adoptNow(status, opts)),
+  adoptOpenedProject: (status, opts) => runSwitch((adopt) => adopt(status, opts), status.name),
 
-  switchTransaction: (fn) => runSwitch(() => fn(adoptNow)),
+  switchTransaction: (fn) => runSwitch(fn),
 
   togglePin: (path) =>
     applyPinned(() => ({

@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { emptyProject } from '@/types/document'
 import type { TextObject } from '@/types/document'
 import { setTelemetryEnabled } from '@/lib/telemetry'
+import { hasActiveGesture, registerGesture } from './gestureCoordinator'
 import {
   discardLocalCopy,
   flushAutosave,
@@ -62,6 +63,40 @@ const reset = async () => {
 
 describe('多画布数据层', () => {
   beforeEach(reset)
+
+  it('switchCanvas flushes an uncommitted color draft into the old canvas before taking its snapshot', () => {
+    const s = () => useDocumentStore.getState()
+    const first = s().activeCanvasId
+    s().commit(literal('add label'), (doc) => { doc.objects.push(text('pending-color', 'A')) })
+    const second = s().addCanvas()
+    s().switchCanvas(first)
+    registerGesture(() => s().commit(literal('choose color'), (doc) => {
+      (doc.objects[0] as TextObject).color = '#123456'
+    }))
+    expect(s().txn).toBeNull()
+    s().switchCanvas(second)
+    expect(hasActiveGesture()).toBe(false)
+    expect(s().doc.objects).toHaveLength(0)
+    s().switchCanvas(first)
+    expect((s().doc.objects[0] as TextObject).color).toBe('#123456')
+    s().undo()
+    expect((s().doc.objects[0] as TextObject).color).toBe('#000')
+  })
+
+  it('switchDocument flushes an uncommitted color draft to the old autosave before replacing the document', async () => {
+    const s = () => useDocumentStore.getState()
+    const oldId = s().documentId
+    s().commit(literal('add label'), (doc) => { doc.objects.push(text('pending-color', 'A')) })
+    registerGesture(() => s().commit(literal('choose color'), (doc) => {
+      (doc.objects[0] as TextObject).color = '#abcdef'
+    }))
+    await s().switchDocument(emptyProject(), 'next-color-document')
+    await tick()
+    expect(hasActiveGesture()).toBe(false)
+    expect(s().doc.objects).toHaveLength(0)
+    const old = (await readAutosaveDoc(oldId)).doc!
+    expect((old.canvases[0].objects[0] as TextObject).color).toBe('#abcdef')
+  })
 
   it('addCanvas 新建并切换；undo 栈按画布隔离', () => {
     const s = () => useDocumentStore.getState()

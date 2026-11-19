@@ -2,6 +2,7 @@ import { defineConfig } from 'vitest/config'
 import { fileURLToPath, URL } from 'node:url'
 
 export default defineConfig({
+  cacheDir: '../codex-files/web-cache/vitest',
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),

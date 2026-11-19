@@ -137,6 +137,7 @@ export function SpineFrameCard({
               >
                 <ColorField
                   ariaLabel={propLabel('spine_color', element.role)}
+                  scopeKey={`${panel.id}:${element.gid}:spine_color`}
                   value={String(color.value ?? '#000000')}
                   onChange={(v) => {
                     unifySides('color')
@@ -228,6 +229,7 @@ export function SpineFrameCard({
             overridden={overridden}
             reset={(p) => clearOverride(panel.id, element.gid, p)}
             gid={element.gid}
+            colorScope={`${panel.id}:${element.gid}`}
             role={element.role}
             labelWidth={labelWidth}
           />
@@ -302,6 +304,7 @@ function FrameRow({
 }
 
 function SideRow({
+  colorScope,
   side,
   colorField,
   widthField,
@@ -315,6 +318,7 @@ function SideRow({
   role,
   labelWidth,
 }: {
+  colorScope: string
   side: Side
   colorField?: EditableField
   widthField?: EditableField
@@ -342,6 +346,7 @@ function SideRow({
           <div data-prop={colorProp} data-gid={gid} className="flex min-w-0 items-center">
             <ColorField
               ariaLabel={`${sideName} ${propLabel(colorProp, role)}`}
+              scopeKey={`${colorScope}:${colorProp}`}
               value={String(read(colorProp) ?? '#000000')}
               onChange={(v) => write(colorProp, v, true)}
               onGestureEnd={endGesture}

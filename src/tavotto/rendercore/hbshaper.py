@@ -18,6 +18,8 @@ RenderCore 的运行时依赖没装的机器上 `import tavotto.rendercore.hbsha
 
 from __future__ import annotations
 
+import hashlib
+import io
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -80,7 +82,10 @@ class HbFace:
         self.ascender = self.record.ascender
         self.descender = self.record.descender
         self.path: Path = self.record.path
-        self._tt = TTFont(str(self.path), lazy=True)
+        self._data = self.path.read_bytes()
+        if hashlib.sha256(self._data).hexdigest() != self.resource.sha256:
+            raise fonts.FontsUnavailable("font_file_invalid", "字体在校验后发生改变；请重试。")
+        self._tt = TTFont(io.BytesIO(self._data), lazy=True)
         tables = set(self._tt.keys())
         kind = fonts.font_kind(frozenset(tables))
         if kind == "cff-cid":
@@ -99,7 +104,7 @@ class HbFace:
         self.upem: int = self._tt["head"].unitsPerEm
         self._hmtx = self._tt["hmtx"].metrics
         self._order: list[str] = list(self._tt.getGlyphOrder())
-        blob = hb.Blob.from_file_path(str(self.path))
+        blob = hb.Blob(self._data)
         self._hb_font = hb.Font(hb.Face(blob))
         self._hb_font.scale = (self.upem, self.upem)
 
@@ -109,6 +114,11 @@ class HbFace:
 
     def advance(self, gid: int) -> int:
         return int(self._hmtx[self._order[gid]][0])
+
+    def glyph_extents(self, gid: int) -> tuple[int, int, int, int] | None:
+        """Unhinted glyph ink bounds in font units, from the same face as shaping."""
+        bounds = self._hb_font.get_glyph_extents(gid)
+        return tuple(bounds) if bounds is not None else None
 
     def shape(self, text: str) -> tuple[Glyph, ...]:
         cached = self._shape_cache.get(text)
@@ -210,7 +220,7 @@ class HbFace:
         # 全进 app.log。它不是产品的日志（产品的进度在 job.trace），压到 WARNING——真出问题的
         # 那些（缺表、坏 cmap）仍是 warning / error，留得住。只动 fontTools.subset 这个 logger。
         logging.getLogger("fontTools.subset").setLevel(logging.WARNING)
-        fresh = TTFont(str(self.path), recalcTimestamp=False)
+        fresh = TTFont(io.BytesIO(self._data), recalcTimestamp=False)
         s = ftsubset.Subsetter(opts)
         s.populate(gids=want)
         s.subset(fresh)
@@ -218,8 +228,6 @@ class HbFace:
         index = {name: i for i, name in enumerate(new_order)}
         remap = {gid: index[self._order[gid]] for gid in want}
         if self.kind == "truetype":
-            import io
-
             buf = io.BytesIO()
             fresh.save(buf)
             data = buf.getvalue()

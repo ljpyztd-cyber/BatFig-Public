@@ -1,6 +1,8 @@
 import { create } from 'zustand'
 import type { AlignRef } from './actions'
 
+export type AlignBasis = 'axes' | 'image'
+
 /**
  * 排列的**参照**（选区包围盒 / 整个画布 / 主选对象）。
  *
@@ -16,9 +18,13 @@ import type { AlignRef } from './actions'
 interface ArrangeState {
   alignRef: AlignRef
   setAlignRef: (ref: AlignRef) => void
+  alignBasis: AlignBasis
+  setAlignBasis: (basis: AlignBasis) => void
 }
 
 export const useArrangeStore = create<ArrangeState>((set) => ({
   alignRef: 'selection',
   setAlignRef: (alignRef) => set((s) => (s.alignRef === alignRef ? s : { alignRef })),
+  alignBasis: 'axes',
+  setAlignBasis: (alignBasis) => set((s) => (s.alignBasis === alignBasis ? s : { alignBasis })),
 }))

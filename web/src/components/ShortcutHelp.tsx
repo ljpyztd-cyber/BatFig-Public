@@ -47,7 +47,7 @@ export const GROUPS: { id: string; rows: Row[] }[] = [
     rows: [
       { keys: `${MOD}A`, desc: 'selectAll' },
       // 多选与右键：真实存在的两条手势（ObjectView 的 shift 加选、QuickEdit 菜单）
-      { comboKey: 'shiftClick', desc: 'multiSelect' },
+      { comboKey: 'shiftClick', comboValues: { mod: MOD }, desc: 'multiSelect' },
       // 重叠元素的轮换（issue #216）：⌥ 点击画布；键盘走 ⌘K 里的同名命令
       { comboKey: 'altClick', comboValues: { alt: ALT }, desc: 'cycleOverlap' },
       { keys: 'Enter', desc: 'enter' },

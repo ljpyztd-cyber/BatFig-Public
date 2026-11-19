@@ -12,6 +12,7 @@ import {
   type TextInterpretation,
 } from '@/lib/richText'
 import { textDiagnostics } from '@/lib/glyphPlan'
+import { useCanvasFontRuntime } from '@/lib/canvasFontRuntime'
 import { msg, t as translate, type UiMessage } from '@/i18n'
 import { BASE_FONT_PT, effectivePt, round1 } from '@/lib/units'
 import { ALT, combo, modKey } from '@/lib/utils'
@@ -132,6 +133,14 @@ export function TextSection({ objs }: { objs: TextObject[] }) {
     })
   }
 
+  const insertSymbol = (symbol: string) => {
+    if (!one) return
+    const start = taRef.current?.selectionStart ?? one.text.length
+    const end = taRef.current?.selectionEnd ?? one.text.length
+    patch(hist('editText'), (o) => { o.text = one.text.slice(0, start) + symbol + one.text.slice(end) })
+    restoreCaret(start + symbol.length, start + symbol.length)
+  }
+
   const moreOpen = useInspectorPrefs((st) => st.moreOpen['text-object'] ?? false)
   const setMoreOpen = useInspectorPrefs((st) => st.setMoreOpen)
   const moreSummary = [
@@ -192,6 +201,11 @@ export function TextSection({ objs }: { objs: TextObject[] }) {
           >
             <CornerDownLeft size={ICON_SIZE.sm} />
           </Button>
+          <Menu trigger={<Button size="sm" data-scientific-symbols>{tx('symbols')}</Button>}>
+            {['α', 'β', 'γ', 'δ', 'ε', 'θ', 'λ', 'μ', 'σ', 'φ', 'ω', 'Δ', 'Ω', '°C', 'Å', 'μm', 'mAh g^{-1}', 'mA cm^{-2}', 'S cm^{-1}'].map((symbol) => (
+              <MenuItem key={symbol} onSelect={() => insertSymbol(symbol)}>{symbol}</MenuItem>
+            ))}
+          </Menu>
         </div>
       )}
 
@@ -306,6 +320,7 @@ export function TextSection({ objs }: { objs: TextObject[] }) {
               {bg && (
                 <ColorField
                   ariaLabel={tx('background')}
+                  scopeKey={ids.join('|')}
                   value={bg}
                   onChange={(v) => patch(hist('setTextBg'), (o) => (o.bg = v))}
                 />
@@ -332,6 +347,7 @@ export function TextSection({ objs }: { objs: TextObject[] }) {
               {borderColor && (
                 <ColorField
                   ariaLabel={tx('border')}
+                  scopeKey={ids.join('|')}
                   value={borderColor}
                   onChange={(v) => patch(hist('setTextBorder'), (o) => (o.borderColor = v))}
                 />
@@ -439,21 +455,25 @@ function ScientificText({
   objs: TextObject[]
   adapter: ReturnType<typeof useCanvasTypography>
 }) {
+  useCanvasFontRuntime()
   const field = adapter.fieldOf('interpretation')
   const value = adapter.valueOf('interpretation')
   const showPicker = objs.some((o) => hasScientificChars(o.text))
   // 提示按**每个对象自己的解释档**算：多选时两段文字可能各选各的。
   const missing: string[] = []
   const substituted: string[] = []
+  const unavailableFamilies = new Set<string>()
   for (const o of objs) {
-    const d = textDiagnostics(o.text, o.interpretation)
+    const d = textDiagnostics(o.text, o.interpretation, o)
+    if (d.unavailable && o.fontFamily) unavailableFamilies.add(o.fontFamily)
     for (const c of d.missing) if (!missing.includes(c)) missing.push(c)
     for (const c of d.substituted) if (!substituted.includes(c)) substituted.push(c)
   }
-  if (!field || (!showPicker && !missing.length && !substituted.length)) return null
+  if (!field || (!showPicker && !missing.length && !substituted.length && !unavailableFamilies.size)) return null
   const current = (displayValueOf(value) ?? DEFAULT_INTERPRETATION) as TextInterpretation
   return (
     <>
+      {[...unavailableFamilies].map((family) => <p key={family} data-canvas-font-unavailable={family} className="text-xs text-danger">{tx('exactFontUnavailable', { family })}</p>)}
       {showPicker && (
         <div data-prop={adapter.pathOf('interpretation') ?? undefined}>
           <Row label={tx('interpretation')} labelWidth={INSPECTOR_LABEL_W}>

@@ -57,6 +57,7 @@ import {
   setLegendPlacement,
   setOverride,
   setOverrides,
+  setColormaps,
   unhideElement,
 } from '@/store/actions'
 import { readAxesTickModel, type SidePlan } from '@/lib/tickSides'
@@ -101,6 +102,7 @@ import { Select } from '../ui/Select'
 import { Toggle } from '../ui/Toggle'
 import { Tip } from '../ui/Tooltip'
 import { useFieldGesture } from './elementWrite'
+import { useColorPreview } from './useColorPreview'
 import {
   absentAppearance,
   controlKindOf,
@@ -113,6 +115,7 @@ import {
 import type { PresentedField } from './presentation/types'
 import { ArrowStylePicker } from './controls/ArrowPickers'
 import { ColormapPicker } from './controls/ColormapPicker'
+import { colormapValue } from '@/lib/customColormap'
 import { colormapAliasGids } from '@/lib/colormapAlias'
 import { withMachineFamilies } from '@/lib/typography'
 import { ColorbarExtendPicker, ColorbarOrientationPicker } from './controls/ColorbarPickers'
@@ -230,7 +233,7 @@ export function ElementInspector({ panel }: { panel: PanelObject }) {
   // 画布标注加进来后与元素同框排版（元素写 override，标注改画布位置）。
   const entries =
     exactManifest && selected.length
-      ? alignEntries(panel, exactManifest, selectedGids)
+      ? alignEntries(panel, exactManifest, selectedGids, { excludeColorbars: true })
       : []
   const mixed: MixedEntry[] = [...entries, ...annEntries]
   const alignGroup = mixed.length > 1 ? mixed : null
@@ -1624,6 +1627,7 @@ function BatchFieldRow({
     </span>
   )
   const gesture = useFieldGesture(panel, el('batchEdit', { label }))
+  const previewColor = useColorPreview(panel, elements)
   // 只有色图的「脚本原样」要看别的元素（谁是谁的色条）；显示用，上一版也行
   const batchManifest = usePanelRender(panel)?.manifest
   // 多选里每个成员各自判断能不能预览：同时选中曲线和刻度组时，曲线照样
@@ -1694,6 +1698,8 @@ function BatchFieldRow({
           <>
             <ColorField
               ariaLabel={label}
+              scopeKey={`${panel.id}:${elements.map((item) => item.gid).join('|')}:${field.prop}`}
+              onPreview={(v) => previewColor(field.prop, v)}
               value={mixed ? '#000000' : String(first ?? '#000000')}
               onChange={(v) => write(v, true)}
               onGestureEnd={gesture.end}
@@ -1738,9 +1744,9 @@ function BatchFieldRow({
               // 「脚本原样」清的是每个成员（连同它的色条 / mappable）上的 override
               return (
                 <ColormapPicker
-                  value={v}
+                  value={mixed ? null : colormapValue(first)}
                   options={opts}
-                  onChange={writeOnce}
+                  onChange={(next) => setColormaps(panel.id, elements, batchManifest, next)}
                   ariaLabel={label}
                   current={sharedCmapFacts(elements, 'cmap_current')}
                   original={sharedCmapFacts(elements, 'cmap_original')}
@@ -1972,6 +1978,7 @@ function FieldRow({
   )
   const labelNode = hint ? <Tip label={hint} side="left">{labelBody}</Tip> : labelBody
   const gesture = useFieldGesture(panel, el('editProp', { label }))
+  const previewColor = useColorPreview(panel, [element])
   const previewable = canPreviewStyle(element.role, field.prop)
 
   /**
@@ -2061,9 +2068,9 @@ function FieldRow({
       // 状态落在哪儿的 override——色条 ↔ mappable 两个 gid 一起清
       return wrap(
         <ColormapPicker
-          value={enumValue}
+          value={colormapValue(value)}
           options={enumOptions}
-          onChange={writeOnce}
+          onChange={(next) => setColormaps(panel.id, [element], rowManifest, next)}
           ariaLabel={label}
           current={field.cmap_current}
           original={field.cmap_original}
@@ -2094,7 +2101,7 @@ function FieldRow({
           options={enumOptions}
           onChange={writeOnce}
           ariaLabel={label}
-          cmap={String(siblingValue('cmap') ?? '')}
+          cmap={colormapValue(siblingValue('cmap')) ?? ''}
           cmapFacts={siblingCmapFacts()}
         />,
       )
@@ -2105,7 +2112,7 @@ function FieldRow({
           options={enumOptions}
           onChange={writeOnce}
           ariaLabel={label}
-          cmap={String(siblingValue('cmap') ?? '')}
+          cmap={colormapValue(siblingValue('cmap')) ?? ''}
           cmapFacts={siblingCmapFacts()}
           orientation={colorbarOrientationOf(panel, element)}
         />,
@@ -2291,11 +2298,11 @@ function FieldRow({
     case 'color':
       return wrap(
         <>
-          {/* 取色是**连续**动作：系统取色盘拖着走会发一串 change。开一轮事务，
-              每次变化只贴 SVG，blur 或安静一会儿才定稿——否则拖一次颜色就是
-              十几条撤销 + 十几次 matplotlib 渲染 */}
+          {/* Input samples only preview SVG; ColorField commits the final color once. */}
           <ColorField
             ariaLabel={label}
+            scopeKey={`${panel.id}:${element.gid}:${field.prop}`}
+            onPreview={(v) => previewColor(field.prop, v)}
             value={String(value ?? '#000000')}
             onChange={(v) => write(v, true)}
             onGestureEnd={gesture.end}
@@ -2643,7 +2650,7 @@ function AlignSection({
       </p>
       <ul className="mt-2 flex flex-col gap-0.5">
         {items.map((it, i) => (
-          <li key={it.key} className="flex items-center gap-1.5 text-xs text-ink-2">
+          <li key={it.key} data-element-align-gid={it.key} className="flex items-center gap-1.5 text-xs text-ink-2">
             <span className="truncate">{engineLabel(it.label)}</span>
             {/*
               「基准」只在它**真的是基准**时出现：等宽/等高拿末位当参照，

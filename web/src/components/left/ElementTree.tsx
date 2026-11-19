@@ -1,4 +1,5 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { isAdditiveSelection } from '@/lib/selectionModifiers'
 import { useTranslation } from 'react-i18next'
 import { t as translate } from '@/i18n'
 import {
@@ -646,7 +647,7 @@ const ElementRow = memo(function ElementRow({
         } else if (e.key === 'Enter') {
           e.preventDefault()
           e.stopPropagation()
-          onSelect(gid, e.shiftKey)
+          onSelect(gid, isAdditiveSelection(e))
         } else if (e.key === 'Delete' || e.key === 'Backspace') {
           e.preventDefault()
           e.stopPropagation()
@@ -660,7 +661,9 @@ const ElementRow = memo(function ElementRow({
       }}
       onPointerDown={(e) => {
         if (e.button !== 0) return
-        onSelect(gid, e.shiftKey)
+        const additive = isAdditiveSelection(e)
+        if (additive) e.preventDefault()
+        onSelect(gid, additive)
       }}
       className={cn(listRowClass({ selected, hidden }), 'pr-0.5')}
     >

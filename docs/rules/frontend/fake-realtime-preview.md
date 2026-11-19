@@ -88,6 +88,15 @@ previewStyle`（只改 DOM）→ `pointerup → setOverride(…) + commitElement
 * **历史粒度 `historyMode`**（`gesture` 默认 / `granular`）只改事务边界，
   两种模式下后端渲染都推迟到手势结束；无论哪种，文档改动都经过
   `documentStore.commit`。
+* **取色输入先保留本地草稿（BatFig 2026-10-13）**：`ColorField` 的原生
+  `input` 事件只更新色块，图内可预览字段经 `useColorPreview` 按帧送到
+  SVG 预览平面；不写文档、不触发自动保存、不发后端。原生 `change`、失焦或
+  `finishActiveGesture()` 才提交最后一个值并收尾一次。Esc / pointercancel
+  还原草稿和预览。草稿锁定起手时的写入者；`scopeKey` 更换编辑目标时取消草稿并
+  换掉原生 input，旧对话框的迟到事件不会写到新对象。切换文档或画布前统一
+  `settleDocumentInput()`，旧草稿先进旧文档的快照。没有 SVG 预览能力的字段
+  显示色块草稿，完成后请求权威渲染。
+  SVG 样式账本用 Set 去重，密集散点不再每帧逐项扫描已经记录过的全部节点。
 * 看护：`web/src/lib/svgStyle.test.ts`（真实 SVG fixture 的适配器矩阵）、
   `store/svgPreviewStore.test.ts`、`canvas/fakeRealtimeDrag.test.tsx`
   （100 次 move 零后端 / 取消语义 / 撤销重做）、

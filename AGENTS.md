@@ -1,4 +1,10 @@
-# Tavotto — 仓库级规则
+# BatFig
+
+BatFig is an independent AGPL-3.0-only derivative of Tavotto v0.17.0. The browser product name is BatFig. The Python package, file format and protocol keep their upstream names. See [BATFIG.md](BATFIG.md) for source setup.
+
+Keep project libraries, research data, local runtime files and font binaries out of Git. Preserve the upstream license and notices.
+
+# 上游 Tavotto — 仓库级规则
 
 本文件是每次会话都要读的那一份，只放四样：任务路由、跨仓库不变量、验证入口、
 索引。各层规则的**全文按主题**放在 `docs/rules/`（总览与体积预算见

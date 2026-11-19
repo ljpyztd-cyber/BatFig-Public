@@ -148,10 +148,11 @@ function paints(el: Styled, prop: string): boolean {
   return v != null && v !== 'none'
 }
 
-function setStyle(el: Styled, prop: string, value: string, edits: StyleEdit[]): void {
+function setStyle(el: Styled, prop: string, value: string, edits: StyleEdit[], seen: Set<Styled>): void {
   // 只在**第一次碰这个元素**时记账：同一 session 里反复改（拖滑块）不能把
   // 「上一帧的预览值」当成 base，否则还原会还到一个中间值上
-  if (!edits.some((e) => e.el === el)) {
+  if (!seen.has(el)) {
+    seen.add(el)
     edits.push({ el, prev: el.getAttribute('style') })
   }
   el.style.setProperty(prop, value)
@@ -195,7 +196,8 @@ export function applyStyleEdit(
   ctx: StyleContext,
 ): StyleEdit[] {
   const edits: StyleEdit[] = []
-  for (const t of styleTargets(node, kind, value, ctx)) setStyle(t.el, t.prop, t.value, edits)
+  const seen = new Set<Styled>()
+  for (const t of styleTargets(node, kind, value, ctx)) setStyle(t.el, t.prop, t.value, edits, seen)
   return edits
 }
 

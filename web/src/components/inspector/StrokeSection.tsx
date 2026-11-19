@@ -255,6 +255,7 @@ export function ArrowSection({ objs }: { objs: ArrowObject[] }) {
             <div className="shrink-0">
               <ColorField
                 ariaLabel={sk('color')}
+                scopeKey={ids.join('|')}
                 value={shared(objs, (o) => (o as ArrowObject).color) ?? '#1B1B18'}
                 onChange={(v) => patch(hist('setArrowColor'), (o) => (o.color = v))}
               />
@@ -312,6 +313,7 @@ export function ShapeSection({ objs }: { objs: ShapeObject[] }) {
             {fill && (
               <ColorField
                 ariaLabel={sk('fill')}
+                scopeKey={ids.join('|')}
                 value={fill}
                 onChange={(v) => patch(hist('setFill'), (o) => (o.fill = v))}
               />
@@ -321,6 +323,7 @@ export function ShapeSection({ objs }: { objs: ShapeObject[] }) {
         <Row label={sk('strokeColor')} labelWidth={INSPECTOR_LABEL_W}>
           <ColorField
             ariaLabel={sk('strokeColor')}
+            scopeKey={ids.join('|')}
             value={shared(objs, (o) => (o as ShapeObject).color) ?? '#1B1B18'}
             onChange={(v) => patch(hist('setStrokeColor'), (o) => (o.color = v))}
           />

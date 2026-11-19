@@ -27,18 +27,24 @@ lib/typography.ts          规范属性名 · 取值语义 · 能力表 · prope
 * **property path 只有 `propertyPathOf(kind, prop)` 一份**：检查报的字段名、
   控件挂的 `data-prop`、`issueFocus` 查的选择器同源。`TEXT_BAR_PROPS`
   （「平铺列表要让出哪几条」）**从这张表算出来，不手抄**。
-* **画布文字的字体族是闭集**（`serif` / `sans-serif` / `monospace`），与
-  `pdfbackend.CANVAS_TEXT_FAMILIES` 严格同源（顺序也比）。合成跑在没有
-  matplotlib 的 Flask 进程里，画得出来的就是批准字体集合里的 Liberation 三族
-  （ADR 0060 / 0072）；摆一个画不出来的选项 = 静默替换。`TextObject.fontFamily` 是**可选字段**，缺席 = 没设过
-  = 继承默认族，回到默认值时**删字段**。
+* **画布文字的字体族是闭集**（历史 `serif` / `sans-serif` / `monospace` 加
+  本机真实 `Arial` / `Times New Roman`），与 `pdfbackend.CANVAS_TEXT_FAMILIES`
+  严格同源（顺序也比）。具名字体由 RenderCore 核验本机的常规、粗体、斜体与
+  粗斜体；动态覆盖来自 `/api/canvas/fonts`，画布像素来自同一 RenderCore，
+  不用浏览器 CSS 回退伪装真实字体预览。缺字体或缺字形明确报错。
+  `TextObject.fontFamily` 是**可选字段**，缺席 = 历史默认族，旧文档不补字段。
+  BatFig 新文字、面板编号与独立符号默认 Arial、20 pt、不加粗（2026-10-22）；TNR 由用户选择。
+  科研组合预设保留布局所需的字号；用户显式样式优先，已有对象不自动改写。恢复操作使用当前规范的创建默认值，
+  历史通用族默认仍**删字段**。共享字体选择器独占一行，字体名称以 UI 字体显示，
+  真实效果由画布或图内预览显示，字号与 B/I 沿用共同控件。
 * **写入**：invalid 输入不开事务、不 commit、不进历史，校验**不 clamp**；
   连续输入合并成一条历史，且 `write()` **自己会开一轮**——打字那条路没有
   `onScrubStart`。
 * **字形归属与科学文本（ADR 0033）**：`lib/glyphPlan.ts` 回答「这个字符导出
-  后由哪张脸画、会不会是方框」，判据是**生成的覆盖表**（`@glyphcoverage`
+  后由哪张脸画、会不会是方框」，通用族判据是**生成的覆盖表**（`@glyphcoverage`
   别名，与 `src/tavotto/glyphplan.py` 严格同源）——**不是浏览器自己的字体
-  栈**。拿浏览器画得出当判据的结果正是「预览好好的、导出上是个方框」。
+  栈**；具名字体用后端动态返回的逐字体、逐字重/字形覆盖。拿浏览器画得出
+  当判据的结果正是「预览好好的、导出上是个方框」。
   `TextObject.interpretation` 两档（`auto` 默认 / `scientific`），合成只生成
   渲染表示，**raw text 一个字符不改**；`scientific` 的代价是 PDF 文本层里的
   `⁵` 变成 `5`，所以它必须由用户明确选。缺字形与「换了脸」是**两条规则、

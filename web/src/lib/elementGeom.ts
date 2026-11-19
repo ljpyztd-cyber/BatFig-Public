@@ -256,13 +256,25 @@ export function alignEntries(
   panel: PanelObject,
   manifest: Manifest,
   gids: string[],
+  options: { excludeColorbars?: boolean } = {},
 ): AlignEntry[] {
   const out: AlignEntry[] = []
   const seen = new Set<string>()
+  const colorbarAxes = options.excludeColorbars
+    ? manifest.elements.filter((el) => el.is_colorbar && (el.role === 'axes' || el.role === 'axes3d')).map((el) => el.gid)
+    : []
 
   for (const gid of gids) {
     const el = manifest.elements.find((e) => e.gid === gid)
     if (!el || !isAlignable(el)) continue
+    // Arrangement excludes the color scale, whether picked by its semantic
+    // element, axes or label. Descendants use the manifest's gid hierarchy,
+    // only after that root axis is confirmed as a colorbar (never label text).
+    // Direct dragging/resizing still uses the complete selection.
+    if (options.excludeColorbars && (
+      el.role === 'colorbar' || el.is_colorbar ||
+      colorbarAxes.some((root) => geomGid(el) === root || el.gid.startsWith(`${root}.`))
+    )) continue
     const key = geomGid(el)
     if (seen.has(key)) continue
 

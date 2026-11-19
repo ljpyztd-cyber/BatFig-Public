@@ -36,6 +36,7 @@ import {
   type TextInterpretation,
 } from './richText'
 import type { TextObject } from '@/types/document'
+import type { PublicationProfile } from './profile'
 
 /* ----------------------------- 规范属性名 --------------------------------- */
 
@@ -79,19 +80,18 @@ export type FontStyle = (typeof STYLES)[number]
 export type HAlign = (typeof HALIGNS)[number]
 
 /**
- * 画布文字能选的字体族。**闭集，且只有三个通用族。**
- *
- * 理由是能力，不是偷懒：合成与写回跑在 Flask 进程里，那里**没有
- * matplotlib**（见 `src/tavotto/AGENTS.md` 的进程边界），画字只能用
- * 批准字体集合里的 Liberation 三族（ADR 0060 / 0072）——恰好就是这三个通用族。把「Times New Roman」摆进
- * 这个下拉，得到的会是「界面上选得中、导出时悄悄换一个」，那正是本轮要
- * 消灭的那类静默替换。
+ * 画布文字字体闭集：历史通用族，加上本机核验的 Arial / Times New Roman。
+ * 具名字体的预览由 RenderCore 返回像素，缺字体/字形时阻断，不走浏览器回退。
  *
  * 严格同源：`src/tavotto/pdfbackend/__init__.py` 的 `CANVAS_TEXT_FAMILIES`
  * （看护 `tests/test_typography_families.py`）。
  */
-export const CANVAS_TEXT_FAMILIES = ['serif', 'sans-serif', 'monospace'] as const
+export const CANVAS_TEXT_FAMILIES = ['serif', 'sans-serif', 'monospace', 'Arial', 'Times New Roman'] as const
 export type CanvasTextFamily = (typeof CANVAS_TEXT_FAMILIES)[number]
+export const EXACT_TEXT_FAMILIES = ['Arial', 'Times New Roman'] as const
+export type ExactTextFamily = (typeof EXACT_TEXT_FAMILIES)[number]
+export const isExactTextFamily = (value: unknown): value is ExactTextFamily =>
+  typeof value === 'string' && (EXACT_TEXT_FAMILIES as readonly string[]).includes(value)
 
 /**
  * 画布文字没设过字体时**生效**的族。
@@ -117,6 +117,10 @@ export const effectiveCanvasFamily = (o: Pick<TextObject, 'fontFamily'>): Canvas
  */
 export const canvasFontStack = (family: CanvasTextFamily): string => {
   switch (family) {
+    // Exact-font static previews come from RenderCore, never this CSS stack.
+    case 'Arial':
+    case 'Times New Roman':
+      return `"${family}"`
     case 'sans-serif':
       return 'Helvetica, Arial, "PingFang SC", "Microsoft YaHei", sans-serif'
     case 'monospace':
@@ -499,9 +503,9 @@ export function canvasFieldOf(prop: TypographyProp): EditableField | undefined {
  * / 粘贴 / Style 应用都从这里取，散在各处写 `sizePt: 10, bold: false` 的话
  * 「新建的标注和刚复制的标注长得不一样」这类问题会一直有人报。
  *
- * `fontFamily` **刻意不在里面**：新建的文字是「没设过字体」，于是它跟着
- * 文档默认族走。给它填一个显式的 `'serif'` 会把继承变成一次显式设置，
- * 以后默认族改了它就不跟了。
+ * BatFig 默认显式记录 Arial、20 pt、常规字重；旧规范保留历史继承。
+ * Times New Roman 仅在用户选择时写入，不借增加字体改变旧规范的默认行为。
+ * 读取旧文档不调用这里，也不补字段。
  */
 export interface CanvasTextDefaults {
   sizePt: number
@@ -509,14 +513,16 @@ export interface CanvasTextDefaults {
   style: FontStyle
   color: string
   halign: HAlign
+  fontFamily?: CanvasTextFamily
 }
 
-export const canvasTextDefaults = (): CanvasTextDefaults => ({
-  sizePt: 10,
+export const canvasTextDefaults = (profile?: PublicationProfile): CanvasTextDefaults => ({
+  sizePt: profile?.font_family.latin === 'Arial' ? 20 : 10,
   weight: 'normal',
   style: 'normal',
   color: '#000000',
   halign: 'left',
+  ...(profile?.font_family.latin === 'Arial' ? { fontFamily: 'Arial' as const } : {}),
 })
 
 /* ------------------------- 科学文本能力（Prompt 14） ------------------------ */

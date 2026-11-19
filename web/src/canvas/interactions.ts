@@ -1,4 +1,6 @@
 import type { PointerEvent as ReactPointerEvent } from 'react'
+import { isAdditiveSelection } from '@/lib/selectionModifiers'
+import { isExactTextFamily } from '@/lib/typography'
 import { perfInput, perfRelease, perfSpan } from '@/perf/core'
 import { msg, t, type UiMessage } from '@/i18n'
 // 元素名的措辞只有这一份（元素树 / 属性页 / 快速编辑都用它）：轮换的 toast
@@ -67,7 +69,7 @@ import {
   snapTolMm,
   useViewportStore,
 } from '@/store/viewportStore'
-import { setOverride, setOverrides } from '@/store/actions'
+import { currentCanvasTextDefaults, setOverride, setOverrides } from '@/store/actions'
 import { previewLine, previewScale, previewTransform } from '@/store/svgPreviewStore'
 import {
   beginElementPreview,
@@ -544,7 +546,7 @@ export function startEndpointDrag(e: ReactPointerEvent, objectId: string, which:
 /* -------------------------------------------------------------------------- */
 
 export function startMarquee(e: ReactPointerEvent) {
-  const additive = e.shiftKey
+  const additive = isAdditiveSelection(e)
   const base = additive ? [...useSelectionStore.getState().ids] : []
   const start = clientToMm(e.clientX, e.clientY)
   if (!additive) useSelectionStore.getState().clear()
@@ -669,6 +671,7 @@ export function startDraw(e: ReactPointerEvent, tool: Exclude<Tool, 'select'>) {
       const id = newId(tool[0])
       let created: CanvasObject
       if (tool === 'text') {
+        const defaults = currentCanvasTextDefaults()
         const text: TextObject = {
           id,
           type: 'text',
@@ -676,11 +679,12 @@ export function startDraw(e: ReactPointerEvent, tool: Exclude<Tool, 'select'>) {
           y: rect.y,
           w: Math.max(rect.w, 12),
           h: 5,
-          text: t('objectType.text'),
-          sizePt: 10,
-          bold: false,
-          color: '#000000',
-          align: 'left',
+          text: isExactTextFamily(defaults.fontFamily) ? t('inspector:text.exactFontDefaultText') : t('objectType.text'),
+          sizePt: defaults.sizePt,
+          bold: defaults.weight === 'bold',
+          color: defaults.color,
+          align: defaults.halign,
+          ...(defaults.fontFamily ? { fontFamily: defaults.fontFamily } : {}),
         }
         created = text
       } else if (tool === 'arrow' || tool === 'line') {

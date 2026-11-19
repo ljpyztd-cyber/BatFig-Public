@@ -3,6 +3,10 @@
 > 原文出自 `src/tavotto/AGENTS.md`「PDF 后端边界（许可证相关，勿破坏）」（2026-09-17 指导文档治理时迁出，正文逐字未改）。
 > 这里是这一主题规则的**唯一全文**；`src/tavotto/AGENTS.md` 只留速查行。改规则改这里，并同步那一行。
 
+BatFig 扩展（2026-10-04，ADR 0060）：契约层新增 `canvas_font_status()`、`canvas_text_preview(obj)` 与
+公开 `CanvasTextError`。Arial / Times New Roman 预览与导出共用 RenderCore，不向浏览器传字体文件；缺字体或字形以结构化
+错误返回。`canvas_font_status(family="Arial")` 保持原调用兼容。具名族的覆盖由本机真实脸返回；静态覆盖表仅描述三通用族。
+
 - **`src/tavotto/pdfbackend/__init__.py` 是与实现无关的契约层**（probe_asset / pdf_fonts /
   render_preview_png / text_width / text_plan / missing_glyphs / coverage_ranges / compare_png /
   compose + original_* / annotate_asset + mm2pt / hex2rgb + 四个常量，19 项）。`app.py` /

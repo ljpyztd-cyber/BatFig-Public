@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react'
+import { isAdditiveSelection } from '@/lib/selectionModifiers'
 import { useTranslation } from 'react-i18next'
 import { t as translate } from '@/i18n'
 import {
@@ -350,12 +351,17 @@ function LayerRow({
         reorderObject(from, obj.id, e.clientY < r.top + r.height / 2 ? 'above' : 'below')
       }}
       onPointerDown={(e) => {
-        if (editing) return
+        if (editing || e.button !== 0) return
         const sel = useSelectionStore.getState()
-        if (e.shiftKey) sel.toggle(obj.id)
-        else sel.set([obj.id])
+        if (isAdditiveSelection(e)) {
+          // Prevent the following native focus event from collapsing a toggle-off.
+          e.preventDefault()
+          sel.toggle(obj.id)
+        } else sel.set([obj.id])
       }}
-      onDoubleClick={() => setEditing(true)}
+      onDoubleClick={(e) => {
+        if (!isAdditiveSelection(e)) setEditing(true)
+      }}
       style={treeIndent(depth)}
       className={cn(
         listRowClass({ selected, hidden: obj.hidden }),

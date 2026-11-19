@@ -62,6 +62,6 @@
   `TypographyAdapter` 的两个适配器（图内 `setOverride(s)`、画布
   `updateObjects`），控件只有 `controls/TypographyControls.tsx` 一份。
   `weight` / `style` 两侧同一枚举，字号一律 pt；**「不支持」「没设过」
-  「多个值」是三个不同的答案**。画布文字能选的字体族是闭集（三个通用族），
+  「多个值」是三个不同的答案**。画布文字能选的字体族是闭集（三个通用族加本机核验的 Arial、Times New Roman），
   与 `pdfbackend.CANVAS_TEXT_FAMILIES` 严格同源——**前端摆得出的，后端必须
   画得出**。

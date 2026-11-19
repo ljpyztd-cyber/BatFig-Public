@@ -9,9 +9,16 @@ import {
   type ReactNode,
   type TextareaHTMLAttributes,
 } from 'react'
+import { useTranslation } from 'react-i18next'
 import { t } from '@/i18n'
 import { DURATION } from '@/lib/motion'
 import { cn } from '@/lib/utils'
+import { COMMON_COLORS, COLOR_PALETTES } from '@/lib/colorPalettes'
+import { finishActiveGesture, registerGesture } from '@/store/gestureCoordinator'
+import { Button } from './Button'
+import { ChevronDown, Check } from './icons'
+import { ICON_SIZE } from './Icon'
+import { Popover } from './Popover'
 import {
   FIELD_BOX as BOX_CLASS,
   FIELD_DISABLED as BOX_DISABLED,
@@ -434,17 +441,22 @@ export function ColorField({
   value,
   onChange,
   onGestureEnd,
+  onPreview,
+  scopeKey,
   className,
   ariaLabel,
 }: {
   value: string
   onChange: (v: string) => void
   /**
-   * 这一轮取色结束（取色盘失焦）。取色是连续动作：系统取色盘拖着走会发一串
-   * change，调用方靠它把整轮压成一条历史 + 一次定稿渲染。原生对话框不保证发
-   * blur，所以调用方另有安静计时兜底——这里只管报告确实发生了的失焦。
+   * Final color choice applied once. Native input events stay local; the native
+   * change event, blur, or gesture coordinator flushes the final value.
    */
   onGestureEnd?: () => void
+  /** Only the preview plane; null restores the original before commit or cancellation. */
+  onPreview?: (v: string | null) => void
+  /** Identity of the edited target; changing it cancels the old native draft. */
+  scopeKey?: string
   className?: string
   /**
    * 无障碍名，**必填**。外面那行可见标签不是 `<label for>`，取色盘的名字只能
@@ -456,19 +468,95 @@ export function ColorField({
    */
   ariaLabel: string
 }) {
+  const { t } = useTranslation()
+  const [draft, setDraft] = useState<string | null>(null)
+  const [open, setOpen] = useState(false)
+  const inputRef = useRef<HTMLInputElement>(null)
+  const pending = useRef<string | null>(null)
+  const frame = useRef<number | null>(null)
+  const unregister = useRef<(() => void) | null>(null)
+  const latest = useRef({ value, onChange, onGestureEnd, onPreview })
+  latest.current = { value, onChange, onGestureEnd, onPreview }
+  const owner = useRef<typeof latest.current | null>(null)
+
+  const finish = useCallback((cancel = false) => {
+    if (frame.current != null) cancelAnimationFrame(frame.current)
+    frame.current = null
+    unregister.current?.()
+    unregister.current = null
+    const next = pending.current
+    pending.current = null
+    const target = owner.current ?? latest.current
+    owner.current = null
+    if (next === null) return
+    target.onPreview?.(null)
+    setDraft(null)
+    if (!cancel && next.toLowerCase() !== target.value.toLowerCase()) {
+      target.onChange(next)
+      target.onGestureEnd?.()
+    }
+  }, [])
+
+  const stage = (next: string) => {
+    if (pending.current == null) owner.current = latest.current
+    pending.current = next
+    setDraft(next)
+    // Native input events can arrive much faster than a paint. Only the tiny local
+    // swatch re-renders; the document, autosave, and render scheduler stay untouched.
+    if (!unregister.current) unregister.current = registerGesture(() => finish())
+    if (frame.current == null) {
+      frame.current = requestAnimationFrame(() => {
+        frame.current = null
+        if (pending.current != null) owner.current?.onPreview?.(pending.current)
+      })
+    }
+  }
+
+  useLayoutEffect(() => {
+    finish(true)
+    setOpen(false)
+  }, [scopeKey, finish])
+
+  useEffect(() => {
+    const input = inputRef.current
+    // React's change plugin deduplicates the final native change if its value was
+    // already seen in input. Listen to that completion event directly so release
+    // always flushes the last sample, even when no blur follows the native dialog.
+    const changed = () => {
+      if (pending.current == null) owner.current = latest.current
+      if (input) pending.current = input.value
+      finish()
+    }
+    input?.addEventListener('change', changed)
+    return () => {
+      input?.removeEventListener('change', changed)
+      finish()
+    }
+  }, [finish, scopeKey])
+
+  const pick = (next: string) => {
+    finish(true)
+    finishActiveGesture()
+    if (next.toLowerCase() !== latest.current.value.toLowerCase()) {
+      latest.current.onChange(next)
+      latest.current.onGestureEnd?.()
+    }
+    setOpen(false)
+  }
+  const displayed = draft ?? value
   // 引擎报 `none` = 这条没有颜色（没设边色的形状、`fill` 关着的面、空心 marker），
   // 不是黑色（#427 之前 `to_hex` 丢掉 alpha，透明黑显示成 #000000，检查器摆出一条
   // 并不存在的黑边）。色块画成「无」：白底一道红斜线，与画布图形「无填充」同一个记号；
   // 取色盘本身只吃合法色号，喂它黑色当起点，用户一取色就是一个真的颜色。
-  const none = value === NO_COLOR
+  const none = displayed === NO_COLOR
   return (
-    // 只剩一块色块（2026-09-11 用户反馈：去掉色号框，点色块取色）。
-    // 取色盘是**透明盖在色块上的真控件**，自带一圈 focus ring——纯键盘 Tab 到它
+    // 取色盘是透明盖在色块上的真控件，右侧按钮展示常用颜色与配色组合。
+    // 自带一圈 focus ring——纯键盘 Tab 到它
     // 时屏幕上得有反馈；overflow-hidden 只裁子元素，不会吃掉这一层自己的 outline。
     // 当前色号走 title：鼠标悬停仍看得到精确值。
-    <div className={cn('flex h-7 items-center', className)}>
+    <div data-color-field className={cn('flex h-7 items-center gap-0.5', className)}>
       <div
-        title={none ? t('colorField.none') : value.toUpperCase()}
+        title={none ? t('colorField.none') : displayed.toUpperCase()}
         data-none={none || undefined}
         className="relative h-5 w-8 shrink-0 overflow-hidden rounded-sm border border-border transition-colors hover:border-border-strong has-[:focus-visible]:focus-ring"
       >
@@ -481,16 +569,79 @@ export function ColorField({
             }}
           />
         ) : (
-          <div className="absolute inset-0" style={{ background: value }} />
+          <div className="absolute inset-0" style={{ background: displayed }} />
         )}
         <input
+          key={scopeKey}
+          ref={inputRef}
           type="color"
-          value={none ? '#000000' : value}
-          onChange={(e) => onChange(e.target.value)}
-          onBlur={onGestureEnd}
+          value={none ? '#000000' : displayed}
+          onInput={(e) => stage(e.currentTarget.value)}
+          onChange={() => {}}
+          onBlur={() => finish()}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') {
+              e.stopPropagation()
+              finish(true)
+            }
+          }}
+          onPointerCancel={() => finish(true)}
           aria-label={t('colorField.picker', { label: ariaLabel })}
           className="absolute inset-0 opacity-0"
         />
+      </div>
+      <Popover
+        width={260}
+        open={open}
+        onOpenChange={setOpen}
+        ariaLabel={t('colorField.presets')}
+        trigger={
+          <Button size="icon-sm" data-color-presets-trigger aria-label={`${ariaLabel}: ${t('colorField.presets')}`}>
+            <ChevronDown size={ICON_SIZE.xs} />
+          </Button>
+        }
+      >
+        <div data-color-presets className="flex max-h-96 flex-col gap-2 overflow-y-auto">
+          <ColorSamples label={t('colorField.common')} colors={COMMON_COLORS} value={value} onPick={pick} />
+          {COLOR_PALETTES.map((palette) => (
+            <ColorSamples key={palette.id} label={t(`colorPalettes.${palette.id}`)} colors={palette.colors} value={value} onPick={pick} />
+          ))}
+          <span className="text-xs text-ink-3">{t('colorField.customHint')}</span>
+        </div>
+      </Popover>
+    </div>
+  )
+}
+
+function ColorSamples({ label, colors, value, onPick }: {
+  label: string
+  colors: readonly string[]
+  value: string
+  onPick: (value: string) => void
+}) {
+  return (
+    <div className="flex flex-col gap-1">
+      <span className="text-xs text-ink-3">{label}</span>
+      <div className="grid grid-cols-6 gap-1">
+        {colors.map((color) => (
+          <Button
+            key={color}
+            size="sm"
+            data-color-sample={color}
+            aria-label={`${label} ${color.toUpperCase()}`}
+            aria-pressed={value.toLowerCase() === color}
+            title={color.toUpperCase()}
+            onClick={() => onPick(color)}
+            className="relative min-w-0 px-1"
+          >
+            <span aria-hidden className="h-5 w-full rounded-xs border border-border-strong" style={{ background: color }} />
+            {value.toLowerCase() === color && (
+              <span aria-hidden className="absolute rounded-xs bg-surface text-ink">
+                <Check size={ICON_SIZE.xs} />
+              </span>
+            )}
+          </Button>
+        ))}
       </div>
     </div>
   )

@@ -3,6 +3,12 @@
 > 原文出自 `src/tavotto/AGENTS.md`「渲染引擎核心机制」（2026-09-17 指导文档治理时按主题拆出，正文逐字未改）。
 > 这里是这一主题规则的**唯一全文**；`src/tavotto/AGENTS.md` 只留速查行。改规则改这里，并同步那一行。
 
+- **LRU 不得关停正在被请求持有的会话**：`pool.worker_scope()` 从取会话之前包到
+  响应消费完成，`acquire()` 在池锁内登记引用，不能用协议锁的忙闲代替。取得会话到
+  首次请求、build 到 override 之间的空隙同样受保护。Flask 请求与 `bound_project()`
+  后台作业是入口；嵌套 scope 共享最外层持有集合，异常也必须释放。`MAX_ALIVE`
+  是空闲预算，忙时可超出，释放后只淘汰无引用的 LRU 会话直至收敛；显式失效、
+  取消和退出仍可关停。两种控制面共用此规则。看护：`tests/test_pool_leases.py`。
 - **worker 协议 v1（2026-08-18）**：请求带 `protocol_version/request_id/
   worker_generation/render_revision/canonical_patch_hash` 信封，命令
   ping/build/render/render_png/preview_png/export/cancel/shutdown，

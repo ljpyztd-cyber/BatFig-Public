@@ -53,6 +53,7 @@ export type OpenOutcome =
   | 'native-pending'   // `tavotto run` 的确认已排队，没有别的面板要落
   | 'missing'          // 项目里找不到这个 stem
   | 'no-project'       // 没有项目可落
+  | 'cancelled'        // 用户取消离开，或等待项目打开期间文档已变化
   | 'failed'
 
 /** 素材 id 是图库相对路径（可能带子目录）；stem = 去目录去扩展名。 */
@@ -123,10 +124,10 @@ export async function applyOpenRequest(req: OpenRequest): Promise<OpenOutcome> {
   /**
    * `tavotto run` 的确认屏排队。
    *
-   * 与「打开哪张图」互不相干，所以**每条出口都要排**——包括项目没能打开的
+   * 与「打开哪张图」互不相干，所以**失败出口也要排**——包括项目没能打开的
    * 那两条：确认屏自带项目路径 / 解释器 / 工作目录，attach 也不依赖界面此刻
    * 开着哪个项目。不排的表现是那个终端一直挂到 attach 超时，而界面上什么都
-   * 没发生过。
+   * 没发生过。用户主动取消整次交接则不继续排确认屏。
    *
    * 顺序是硬的：**必须在 `proj.open()` 之后**——换项目会把 native 会话状态
    * 整个换代掉（projectStore 的 resetForNewProject），排在前面等于白排。
@@ -139,8 +140,8 @@ export async function applyOpenRequest(req: OpenRequest): Promise<OpenOutcome> {
     const proj = useProjectStore.getState()
     const current = proj.project?.figures_dir
     if (req.project && (!current || norm(current) !== norm(req.project))) {
-      // 换项目：projectStore.open 里已经先冲刷了当前文档的自动保存
-      await proj.open(req.project)
+      // 离开保护与项目请求由 store 串行处理；取消后不在旧项目继续落图。
+      if ((await proj.open(req.project)) === null) return 'cancelled'
     } else if (proj.phase !== 'open') {
       queueNative()
       ui.setStatus(msg('handoff.noProject', undefined, 'project'), 'error')

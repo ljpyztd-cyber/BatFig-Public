@@ -16,6 +16,8 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+vi.mock('@/lib/closeGuard', () => ({ requestLeaveDocument: vi.fn(async () => true) }))
+
 import { setCurrentProjectId } from '@/lib/session'
 import type { DependencyPreparationOffer, DependencyProgress, DependencyRepairPlan } from '@/lib/api'
 import { useDepRepairStore } from './depRepairStore'

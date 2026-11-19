@@ -145,7 +145,7 @@ def test_the_primary_layer_is_the_intersection_of_all_twelve_faces():
     assert live == _load(TABLE)["layers"]
     faces = [
         prov.face_for(fam, b, i)
-        for fam in typography.CANVAS_TEXT_FAMILIES
+        for fam in typography.GENERIC_TEXT_FAMILIES
         for b in (False, True)
         for i in (False, True)
     ]

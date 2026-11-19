@@ -217,6 +217,17 @@ def _text_node(
     if block is None:
         return None
     oid = str(t.get("id", ""))
+    if faces.primary.resource.family in typography.LOCAL_FONT_FAMILIES and block.missing:
+        raise PlanError(
+            "fonts",
+            faces.primary.resource.family + " 缺少字形：" + " ".join(block.missing),
+            {
+                "id": oid,
+                "font_code": "glyph_missing",
+                "chars": list(block.missing),
+                "family": faces.primary.resource.family,
+            },
+        )
     children: list[Node] = []
     bg, border = t.get("bg"), t.get("border_color")
     if bg or border:
@@ -317,7 +328,11 @@ def compile_page(
                 raise PlanError(
                     "fonts",
                     str(exc),
-                    {"id": str(o.get("id", "")), "font_code": getattr(exc, "code", "")},
+                    {
+                        "id": str(o.get("id", "")),
+                        "font_code": getattr(exc, "code", ""),
+                        **getattr(exc, "params", {}),
+                    },
                 ) from exc
             node = _text_node(o, page_h, fs, resources, problems)
         elif kind in ("arrow", "shape"):

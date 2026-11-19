@@ -14,6 +14,7 @@ import { useDocumentStore } from '@/store/documentStore'
 import { resetGestureCoordinator, finishActiveGesture } from '@/store/gestureCoordinator'
 import { emptyProject, type TextObject } from '@/types/document'
 import { useCanvasTypography, type TypographyAdapter } from './typographyAdapter'
+import { useCanvasFontRuntime } from '@/lib/canvasFontRuntime'
 
 /** 自动保存会 PUT 到后端；这里只要不抛就行 */
 globalThis.fetch = (async () => new Response('{}', { status: 200 })) as typeof fetch
@@ -60,6 +61,7 @@ async function mount(objects: TextObject[]) {
   resetGestureCoordinator()
   await s().switchDocument(emptyProject(), 'd_typography')
   s().commit(literal('放入对象'), (d) => {
+    d.profile = { id: 'lab-publication-v1' }
     for (const o of objects) d.objects.push(o)
   })
   container = document.createElement('div')
@@ -70,6 +72,7 @@ async function mount(objects: TextObject[]) {
 
 beforeEach(() => {
   localStorage.clear()
+  useCanvasFontRuntime.setState({ Arial: null, 'Times New Roman': null, failed: false })
 })
 
 afterEach(() => {
@@ -140,6 +143,37 @@ describe('读值：四档不压扁', () => {
 })
 
 describe('写入：事务与历史', () => {
+  it('batch font, size, bold and italic edits preserve Times New Roman and undo as individual actions', async () => {
+    await mount([textObj({ id: 't1', fontFamily: 'Arial' }), textObj({ id: 't2', fontFamily: 'Arial' })])
+    expect(adapter.fieldOf('fontFamily')?.options).toContain('Times New Roman')
+    const before = s().past.length
+    act(() => adapter.writeOnce('fontFamily', 'Times New Roman'))
+    act(() => adapter.writeOnce('sizePt', 12))
+    act(() => adapter.writeOnce('weight', 'bold'))
+    act(() => adapter.writeOnce('style', 'italic'))
+    expect(texts()).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 't1', fontFamily: 'Times New Roman', sizePt: 12, bold: true, italic: true }),
+      expect.objectContaining({ id: 't2', fontFamily: 'Times New Roman', sizePt: 12, bold: true, italic: true }),
+    ]))
+    expect(s().past.length).toBe(before + 4)
+    act(() => { s().undo(); s().undo(); s().undo(); s().undo() })
+    expect(texts().every((o) => o.fontFamily === 'Arial' && o.sizePt === 9 && !o.bold && !o.italic)).toBe(true)
+    act(() => { s().redo(); s().redo(); s().redo(); s().redo() })
+    expect(texts().every((o) => o.fontFamily === 'Times New Roman' && o.sizePt === 12 && o.bold && o.italic)).toBe(true)
+  })
+
+  it('unavailable options are determined per family and selected face without rewriting content', async () => {
+    await mount([textObj({ fontFamily: 'Times New Roman' })])
+    expect(adapter.unavailableOptions('fontFamily')).toEqual(['Arial', 'Times New Roman'])
+    act(() => useCanvasFontRuntime.setState({ 'Times New Roman': { available: true, faces: [
+      { bold: false, italic: false, postscript_name: 'TimesNewRomanPSMT', sha256: 'times', primary: [[32, 126]] },
+    ] } }))
+    expect(adapter.unavailableOptions('fontFamily')).toEqual(['Arial'])
+    act(() => adapter.writeOnce('style', 'italic'))
+    expect(adapter.unavailableOptions('fontFamily')).toEqual(['Arial', 'Times New Roman'])
+    expect(byId('t1').fontFamily).toBe('Times New Roman')
+  })
+
   it('多对象一次修改 = 一条历史，撤销一次两个一起回去', async () => {
     await mount([textObj({ id: 't1' }), textObj({ id: 't2' })])
     const before = s().past.length
@@ -205,7 +239,7 @@ describe('写入：事务与历史', () => {
       adapter.writeOnce('sizePt', Number.NaN)
       adapter.writeOnce('sizePt', 9999)
       adapter.writeOnce('color', 'red')
-      adapter.writeOnce('fontFamily', 'Times New Roman')
+      adapter.writeOnce('fontFamily', 'No Such Font')
       adapter.writeOnce('weight', 'bolder')
     })
     expect(byId('t1').sizePt).toBe(9)
@@ -238,5 +272,14 @@ describe('写入：事务与历史', () => {
     expect(adapter.pathOf('sizePt')).toBe('sizePt')
     expect(adapter.pathOf('fontFamily')).toBe('fontFamily')
     expect(adapter.pathOf('valign')).toBeNull()
+  })
+
+  it('BatFig reset restores explicit Arial and undo returns the previously selected family', async () => {
+    await mount([textObj({ fontFamily: 'monospace' })])
+    act(() => s().silent((d) => { d.profile = { id: 'batfig-arial-v1' } }))
+    act(() => adapter.reset('fontFamily'))
+    expect(byId('t1').fontFamily).toBe('Arial')
+    act(() => { s().undo() })
+    expect(byId('t1').fontFamily).toBe('monospace')
   })
 })

@@ -58,7 +58,7 @@ def test_builtin_style_is_derived_from_the_default_spec(data_dir, tmp_path, monk
     （9.2 → 格子上的 9.5；图例区间 [10, 10.5] 把它顶到 10）。
     """
     doc = json.loads(profiles.profiles_path().read_text(encoding="utf-8"))
-    lab = doc["profiles"]["lab-publication-v1"]
+    lab = doc["profiles"][doc["default_profile"]]
     lab["default_font_size_pt"] = 11.5
     lab["min_effective_font_size_pt"] = 9.2
     lab["absolute_min_font_size_pt"] = 9.0
@@ -115,9 +115,12 @@ def test_builtin_legend_size_stays_inside_the_legend_band(data_dir, tmp_path, mo
     报 `legend-font-size`。8.25 仍然严格高于绝对下限，是这份规范里唯一两头都满足的值。
     """
     doc = json.loads(profiles.profiles_path().read_text(encoding="utf-8"))
-    lab = doc["profiles"]["lab-publication-v1"]
+    lab = doc["profiles"][doc["default_profile"]]
     lab["legend_policy"]["min_font_size_pt"] = 8.0
     lab["legend_policy"]["max_font_size_pt"] = 8.25
+    lab["default_font_size_pt"] = 9.0
+    lab["min_effective_font_size_pt"] = 8.0
+    lab["absolute_min_font_size_pt"] = 8.0
     other = tmp_path / "narrow-legend.json"
     other.write_text(json.dumps(doc, ensure_ascii=False), encoding="utf-8")
     monkeypatch.setenv(profiles.PROFILE_ENV, str(other))

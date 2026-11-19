@@ -9,6 +9,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { literal } from '@/i18n'
+import { bindNamedDocumentTarget } from '@/lib/namedSave'
 import { emptyProject } from '@/types/document'
 import type { ProjectDocument, TextObject } from '@/types/document'
 import {
@@ -558,6 +559,8 @@ describe('关闭与刷新保护', () => {
     await s().switchDocument(seeded(1), 'd_clean')
     await tick()
     expect(s().saveState).toBe('saved')
+    // Recovery autosave alone is not a formal save; verified named content is.
+    bindNamedDocumentTarget({ name: 'clean', revision: 'formal-clean' })
     expect(leave()).toBe(false)
   })
 
@@ -589,6 +592,7 @@ describe('关闭与刷新保护', () => {
     await restoreSession()
     expect(s().docNotice).toMatchObject({ kind: 'recovery' })
     expect(s().saveState).toBe('clean')
+    bindNamedDocumentTarget({ name: 'main', revision: 'formal-main' })
     expect(leave()).toBe(false)
   })
 })

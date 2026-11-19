@@ -28,7 +28,7 @@ import {
 import type { CanvasData, FigureDocument, PanelObject } from '@/types/document'
 import { fixRoute } from './issueFix'
 
-const profile = loadProfile()
+const profile = loadProfile('lab-publication-v1')
 
 const manifestWith = (fields: { gid: string; role: string; label: string; pt: number }[]) => ({
   stem: 'Fig1',

@@ -656,6 +656,8 @@ def _check_panel_axes(panel: dict, profile: dict, sink: _Sink) -> None:
 
         if role in ("image", "colorbar"):
             cmap = _field(el, "cmap")
+            if isinstance(cmap, dict) and cmap.get("type") == "custom":
+                cmap = "custom"
             if isinstance(cmap, str) and cmap:
                 low = cmap.lower()
                 if low in bad_cmaps:
@@ -876,8 +878,27 @@ def _check_texts(spec: dict, profile: dict, sink: _Sink) -> None:
             )
         # 字形覆盖：量的是**渲染表示**（标记拆掉、该合成的已合成），
         # 判据与前端 `glyphPlan.ts` 同源，读同一张生成的覆盖表。
+        coverage = _canvas_coverage()
+        from .fontpolicy import LOCAL_FONT_FAMILIES
+
+        if family in LOCAL_FONT_FAMILIES:
+            # This pure-stdlib oracle measures the actual selected local face.
+            # The static generic-family table cannot establish Arial coverage.
+            from ..rendercore.fonts import FontsUnavailable, local_font_coverage
+
+            try:
+                coverage = local_font_coverage(family, bool(t.get("bold")), bool(t.get("italic")))
+            except FontsUnavailable:
+                sink.add(
+                    "canvas-font-unavailable",
+                    f"画布所需的 {family} 字体不可用；请安装真实字体后重新检查",
+                    message=("canvasFontUnavailable", {"family": family}),
+                    object_ids=[tid],
+                    detail={"family": family},
+                )
+                continue
         gone, subst = glyphplan.text_diagnostics(
-            str(t.get("text") or ""), _canvas_coverage(), t.get("interpretation")
+            str(t.get("text") or ""), coverage, t.get("interpretation")
         )
         if gone:
             shown = "".join(gone)

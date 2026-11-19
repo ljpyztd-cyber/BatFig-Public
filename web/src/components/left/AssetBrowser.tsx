@@ -56,6 +56,7 @@ import { Select } from '../ui/Select'
 import { Toggle } from '../ui/Toggle'
 import { TruncateMiddle } from '../ui/TruncateMiddle'
 import { ScriptLibrary } from './ScriptLibrary'
+import { BatfigCsvImport } from '../BatfigCsvImport'
 
 /** 面板文件名（带扩展名）：同 stem 的 PDF / PNG 靠它区分 */
 const fileName = (id: string) => id.split('/').pop() ?? id
@@ -372,6 +373,7 @@ export function AssetBrowser() {
         )}
       </div>
 
+      <div className="px-3 pb-2"><BatfigCsvImport /></div>
       {busy && loaded && (
         <p className="px-3 py-1 text-xs text-ink-3" aria-live="polite">
           {ab('refreshing')}

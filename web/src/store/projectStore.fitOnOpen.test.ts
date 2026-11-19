@@ -10,7 +10,9 @@
  * 就当场做，量不到就挂起（`viewportStore` 的 pendingFit），舞台第一次上报
  * 尺寸时补上。
  */
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+vi.mock('@/lib/closeGuard', () => ({ requestLeaveDocument: vi.fn(async () => true) }))
 import { setCurrentProjectId } from '@/lib/session'
 import { BASE_PX_PER_MM } from '@/lib/units'
 import { emptyProject, type ProjectDocument } from '@/types/document'

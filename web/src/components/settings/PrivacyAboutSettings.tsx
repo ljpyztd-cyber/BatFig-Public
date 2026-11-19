@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { t as translate } from '@/i18n'
 import { postDiagnosticsBundle, type TelemetrySettings } from '@/lib/api'
 import { buildDiagnosticPayload } from '@/diagnostics'
-import { PRODUCT_NAME } from '@/lib/brand'
+import { PRODUCT_NAME, PRODUCT_ORIGIN } from '@/lib/brand'
 import { TELEMETRY_DISCLOSED_EVENTS } from '@/lib/telemetryDisclosure'
 import { useTelemetryStore } from '@/store/telemetryStore'
 import { useUpdateStore } from '@/store/updateStore'
@@ -54,6 +54,7 @@ function ProductBlock({ version }: { version?: string }) {
           {PRODUCT_NAME}
           {version && <span className="ml-1.5 font-mono text-sm font-normal text-ink-2">v{version}</span>}
         </p>
+        <p className="type-caption">{PRODUCT_ORIGIN}</p>
         <p className="type-caption">{st('about.tagline')}</p>
         <p className="type-meta">
           {st('about.licenseBefore')}{' '}

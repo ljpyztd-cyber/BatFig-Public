@@ -200,13 +200,21 @@ function mutating(): boolean {
 export async function startTutorial(source?: TutorialEntrySource): Promise<TutorialOutcome> {
   if (mutating()) return fail('open_failed')
   // 请求 + 认领是一次切换：请求在路上时别的打开就得排在它后面（Codex #550）
-  return useProjectStore
+  const result = await useProjectStore
     .getState()
-    .switchTransaction((adopt) => startTutorialNow(adopt, source))
+    .switchTransaction((adopt, stillCurrent) => startTutorialNow(adopt, stillCurrent, source))
+  return result ?? cancelled()
+}
+
+/** 取消离开不是教程失败，不显示错误，也不改 onboarding 进度。 */
+function cancelled(): TutorialOutcome {
+  useTutorialStore.setState({ busy: null, failure: null })
+  return { ok: false, reason: 'cancelled', message: failureMessage('cancelled') }
 }
 
 async function startTutorialNow(
   adopt: AdoptProject,
+  stillCurrent: () => boolean,
   source?: TutorialEntrySource,
 ): Promise<TutorialOutcome> {
   useTutorialStore.setState({ busy: 'open', failure: null })
@@ -223,6 +231,10 @@ async function startTutorialNow(
   } catch (e) {
     if (suspended) resumeAutosave()
     return fail(classify(e), e)
+  }
+  if (!stillCurrent()) {
+    if (suspended) resumeAutosave()
+    return cancelled()
   }
   // 后端刚建了一份全新的副本（首次 / 资源升级换了目录）并清了磁盘上的槽位；
   // 本机这格不忘掉的话 readAutosaveDoc 会把上一份副本的排版推回来——与重置同一条路
@@ -263,11 +275,14 @@ export async function resetTutorial(): Promise<TutorialOutcome> {
   if (!ok) return { ok: false, reason: 'cancelled', message: failureMessage('cancelled') }
   // 确认框等用户的那段不算切换；点了确认之后「重置请求 + 认领」是一次切换
   if (mutating()) return fail('open_failed')
-  return useProjectStore.getState().switchTransaction((adopt) => resetTutorialNow(adopt, meta))
+  const result = await useProjectStore.getState()
+    .switchTransaction((adopt, stillCurrent) => resetTutorialNow(adopt, stillCurrent, meta))
+  return result ?? cancelled()
 }
 
 async function resetTutorialNow(
   adopt: AdoptProject,
+  stillCurrent: () => boolean,
   meta: TutorialMetadata | null,
 ): Promise<TutorialOutcome> {
   useTutorialStore.setState({ busy: 'reset', failure: null })
@@ -284,6 +299,10 @@ async function resetTutorialNow(
   } catch (e) {
     if (suspended) resumeAutosave()
     return fail(classify(e), e)
+  }
+  if (!stillCurrent()) {
+    if (suspended) resumeAutosave()
+    return cancelled()
   }
   // 后端只清了磁盘那格；本机这格不忘掉的话 readAutosaveDoc 会把旧进度推回去
   forgetLocalDocument(res.tutorial.document_id)
@@ -326,11 +345,12 @@ async function landTutorial(
     }
   } else {
     try {
-      await adopt(res.project, {
+      const adopted = await adopt(res.project, {
         prepareDocument: async () => {
           docOk = await loadTutorialDocument(meta)
         },
       })
+      if (adopted === null) return cancelled()
     } catch (e) {
       return fail('open_failed', e)
     }
@@ -386,7 +406,7 @@ export function tutorialEntry(
 /** 入口点下去：三种都走 `startTutorial()`——「重新开始」的语义是 onboarding 从头，副本不换 */
 export async function runTutorialEntry(source: TutorialEntrySource): Promise<TutorialOutcome> {
   const out = await startTutorial(source)
-  if (!out.ok) useUiStore.getState().setStatus(out.message, 'error')
+  if (!out.ok && out.reason !== 'cancelled') useUiStore.getState().setStatus(out.message, 'error')
   return out
 }
 

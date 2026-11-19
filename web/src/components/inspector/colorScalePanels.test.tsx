@@ -270,12 +270,14 @@ describe('色阶共用关系（审计 T22 / T23）', () => {
     expect(colorScalePartner(m, sibling)?.gid).toBe('axes_1.colorbar')
     // 色条的对家仍是它直接挂着的 mappable（`mappable_gid`），不是兄弟
     expect(colorScalePartner(m, cb)?.gid).toBe('axes_0.images_0')
-    expect(colormapAliasGids(m, sibling)).toEqual(['axes_2.collections_0', 'axes_1.colorbar'])
-    expect(colormapAliasGids(m, cb)).toEqual([
+    const shared = new Set([
       'axes_1.colorbar',
+      'cb:axes_0.images_0',
       'axes_0.images_0',
       'axes_2.collections_0',
     ])
+    expect(new Set(colormapAliasGids(m, sibling))).toEqual(shared)
+    expect(new Set(colormapAliasGids(m, cb))).toEqual(shared)
     // 两块共用 norm 的网格各挂一条色条：A 的 override 落在 mesh_b 上，从 B 那边
     // 「回到脚本原样」必须把 A 一起清，否则什么都不会变（#474 评审第二轮）
     const cbB = {
@@ -285,22 +287,20 @@ describe('色阶共用关系（审计 T22 / T23）', () => {
       scale_gids: ['axes_0.images_0'],
     } as ManifestElement
     const two = { ...m, elements: [axesEl, imageEl, sibling, cb, cbB] } as Manifest
-    expect(colormapAliasGids(two, cbB)).toEqual([
+    const sharedBoth = new Set([
       'axes_3.colorbar',
+      'cb:axes_0.images_0',
       'axes_2.collections_0',
       'axes_0.images_0',
       'axes_1.colorbar',
     ])
+    expect(new Set(colormapAliasGids(two, cbB))).toEqual(sharedBoth)
     expect(colormapAliasGids(two, cb)).toContain('axes_3.colorbar')
     // 兄弟页的对家是**直接挂着它的** B，不是清单里先出现、只经 scale_gids 盖着它的 A
     expect(colorScalePartner(two, sibling)?.gid).toBe('axes_3.colorbar')
     expect(colorScalePartner(two, imageEl)?.gid).toBe('axes_1.colorbar')
     // 网格页：给它上色的两条色条都在组里
-    expect(colormapAliasGids(two, sibling)).toEqual([
-      'axes_2.collections_0',
-      'axes_1.colorbar',
-      'axes_3.colorbar',
-    ])
+    expect(new Set(colormapAliasGids(two, sibling))).toEqual(sharedBoth)
     // 色条自己的控件被引擎收起来了（cmap 字段不在）：兄弟页**不摆**指向它的链接，
     // 但覆盖关系还在——「回到脚本原样」照旧把它算进要清的组（#474 评审第七轮）
     const gated = {
@@ -309,7 +309,7 @@ describe('色阶共用关系（审计 T22 / T23）', () => {
     } as ManifestElement
     const gatedM = { ...m, elements: [axesEl, imageEl, sibling, gated] } as Manifest
     expect(colorScalePartner(gatedM, sibling)).toBeNull()
-    expect(colormapAliasGids(gatedM, sibling)).toEqual(['axes_2.collections_0', 'axes_1.colorbar'])
+    expect(new Set(colormapAliasGids(gatedM, sibling))).toEqual(shared)
     // 没有 `scale_gids` 的老 manifest：兄弟不认色条（判据只认引擎发的事实）
     const plain = manifestOf()
     expect(colorScalePartner({ ...plain, elements: [...plain.elements, sibling] } as Manifest, sibling)).toBeNull()
@@ -572,7 +572,8 @@ describe('脚本自定义的色图（2026-09-13 用户反馈：图 A 显示 from
     expect(engineRender).not.toHaveBeenCalled()
     await click(cmapTrigger())
     await click(cmapEntries()[1])
-    expect(overrideOf('axes_0.images_0', 'cmap')).toBe('viridis')
+    // The linked colorbar is the canonical writer, so norm siblings update together.
+    expect(overrideOf('axes_1.colorbar', 'cmap')).toBe('viridis')
   })
 
   it('换走之后多一格「脚本原始值」，选它清掉图像与色条两边的 override', async () => {

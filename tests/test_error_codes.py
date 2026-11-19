@@ -47,6 +47,7 @@ _SOURCE_FILES = (
     "engine/exportjob.py",
     # 离线教程（ADR 0039）：`TutorialError("<code>")` 由 app._tutorial_error 转成 JSON
     "engine/tutorial.py",
+    "engine/batfigcsv.py",
 )
 
 #: 「自己报得出全部 code」的模块（ADR 0031 的导出管线）。
@@ -102,6 +103,8 @@ _CODE_PATTERNS = (
     r'error_code\s*=\s*"([a-z0-9_]+)"',
     r'_fail\(\s*job,\s*"([a-z0-9_]+)"',
     r'TutorialError\(\s*"([a-z0-9_]+)"',
+    r'BatfigCSVError\(\s*"([a-z0-9_]+)"',
+    r'CanvasTextError\(\s*"([a-z0-9_]+)"',
 )
 
 
@@ -116,6 +119,27 @@ def _declared_codes(text: str) -> set[str]:
 # code——审计 P1-02：错误尾部不许泄漏中文，所以每个 code 都要有两种语言的
 # 文案，且占位符与 params 对得上）
 USER_VISIBLE_CODES = {
+    "text_preview_invalid": set(),
+    "arial_missing": set(),
+    "local_font_missing": {"family"},
+    "local_font_invalid": {"family"},
+    "local_font_embedding_restricted": {"family"},
+    "arial_invalid": set(),
+    "arial_embedding_restricted": set(),
+    "glyph_missing": {"chars", "family"},
+    "csv_empty": {"detail"},
+    "csv_too_large": {"detail"},
+    "csv_encoding": {"detail"},
+    "csv_invalid": {"detail"},
+    "csv_columns": {"detail"},
+    "csv_headers": {"detail"},
+    "csv_row_width": {"detail"},
+    "csv_too_many_rows": {"detail"},
+    "csv_no_data": {"detail"},
+    "csv_mapping": {"detail"},
+    "csv_non_numeric": {"detail"},
+    "csv_label": {"detail"},
+    "csv_directory": {"detail"},
     "no_project": set(),
     "missing_path": set(),
     "mkdir_failed": {"reason"},
@@ -374,6 +398,8 @@ def test_error_field_is_still_there_as_the_fallback():
                     "ProfileStoreError",
                     "ExportRequestError",
                     "TutorialError",
+                    "BatfigCSVError",
+                    "CanvasTextError",
                 )
             )
             # 导出作业的逐项失败经 `_legacy_export_response()` 这个唯一漏斗

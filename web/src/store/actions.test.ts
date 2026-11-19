@@ -1,7 +1,7 @@
 import { formatMessage, literal } from '@/i18n'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { emptyProject } from '@/types/document'
-import type { ArrowObject, ShapeObject, TextObject } from '@/types/document'
+import type { ArrowObject, PanelObject, ShapeObject, TextObject } from '@/types/document'
 import { duplicateSelected } from './actions'
 import { useDocumentStore } from './documentStore'
 import { useSelectionStore } from './selectionStore'
@@ -28,6 +28,11 @@ const shape = (id: string, partial: Partial<ShapeObject> = {}): ShapeObject => (
   strokePt: 1, color: '#1B1B18', fill: null, ...partial,
 })
 
+const panel = (id: string): PanelObject => ({
+  id, type: 'panel', fileId: `${id}.pdf`, fileKind: 'pdf', overrides: [],
+  x: 0, y: 0, w: 80, h: 60, nativeW: 80, nativeH: 60,
+})
+
 /** 自动保存会 PUT 到后端；这里只要不抛就行 */
 globalThis.fetch = (async () => new Response('{}', { status: 200 })) as typeof fetch
 
@@ -40,7 +45,7 @@ const reset = async () => {
 }
 
 /** 放入对象并选中它们（放入本身占一条历史，与复制那条分开计） */
-const seed = (...objects: (TextObject | ArrowObject | ShapeObject)[]) => {
+const seed = (...objects: (TextObject | ArrowObject | ShapeObject | PanelObject)[]) => {
   s().commit(literal('放入对象'), (d) => {
     d.objects.push(...objects)
   })
@@ -104,5 +109,31 @@ describe('duplicateSelected', () => {
     duplicateSelected()
     expect(s().doc.objects).toHaveLength(1)
     expect(s().past).toHaveLength(before)
+  })
+
+  it('编号先于面板复制时绑定新面板，原件不改，撤销重做保持对应关系', () => {
+    seed(text('label', { text: '(a)', panelLabelFor: 'panel' }), panel('panel'))
+    duplicateSelected()
+    const [copyLabel, copyPanel] = s().doc.objects.slice(2)
+    expect(copyLabel.type === 'text' && copyLabel.panelLabelFor).toBe(copyPanel.id)
+    expect((s().doc.objects[0] as TextObject).panelLabelFor).toBe('panel')
+    s().undo()
+    expect(s().doc.objects).toHaveLength(2)
+    s().redo()
+    expect((s().doc.objects[2] as TextObject).panelLabelFor).toBe(copyPanel.id)
+  })
+
+  it('只复制编号时清除绑定，即使原面板仍在画布', () => {
+    seed(panel('panel'), text('label', { text: '(a)', panelLabelFor: 'panel' }))
+    useSelectionStore.getState().set(['label'])
+    duplicateSelected()
+    expect(s().doc.objects[2]).not.toHaveProperty('panelLabelFor')
+    expect((s().doc.objects[1] as TextObject).panelLabelFor).toBe('panel')
+  })
+
+  it('不会把错误指向非面板对象的旧绑定复制到新对象', () => {
+    seed(text('target'), text('label', { panelLabelFor: 'target' }))
+    duplicateSelected()
+    expect(s().doc.objects[3]).not.toHaveProperty('panelLabelFor')
   })
 })

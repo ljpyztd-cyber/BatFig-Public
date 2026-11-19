@@ -4,6 +4,7 @@ import { modKey } from '@/lib/utils'
 import { useDocumentStore } from '@/store/documentStore'
 import { useSelectionStore } from '@/store/selectionStore'
 import { useUiStore } from '@/store/uiStore'
+import { currentCanvasTextDefaults } from '@/store/actions'
 import { clientToMm, useViewportStore } from '@/store/viewportStore'
 import type {
   ArrowObject,
@@ -56,16 +57,20 @@ const baseArrow = (x: number, y: number, w: number, h: number): ArrowObject => (
   headEnd: 'triangle',
 })
 
-const baseText = (x: number, y: number, w: number, text: string, sizePt = 9): TextObject => ({
-  id: newId('t'),
-  type: 'text',
-  x, y, w, h: 6,
-  text,
-  sizePt,
-  bold: false,
-  color: '#1B1B18',
-  align: 'center',
-})
+const baseText = (x: number, y: number, w: number, text: string, sizePt = 9): TextObject => {
+  const defaults = currentCanvasTextDefaults()
+  return {
+    id: newId('t'),
+    type: 'text',
+    x, y, w, h: 6,
+    text,
+    sizePt,
+    bold: false,
+    color: '#1B1B18',
+    align: 'center',
+    ...(defaults.fontFamily ? { fontFamily: defaults.fontFamily } : {}),
+  }
+}
 
 const baseShape = (kind: ShapeKind, x: number, y: number, w: number, h: number): ShapeObject => ({
   id: newId('s'),
@@ -125,7 +130,7 @@ export const SYMBOLS = [
 
 export function insertSymbol(sym: string): void {
   const c = dropPoint()
-  const obj = baseText(c.x - 5, c.y - 3, 10, sym)
+  const obj = baseText(c.x - 5, c.y - 3, 10, sym, currentCanvasTextDefaults().sizePt)
   place([obj], msg('history.insertSymbol', { symbol: sym }, 'workspace'), sym)
 }
 

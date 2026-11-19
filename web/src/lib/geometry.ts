@@ -10,7 +10,7 @@ export interface Rect {
 
 export const rectOf = (o: CanvasObject): Rect => ({ x: o.x, y: o.y, w: o.w, h: o.h })
 
-export function boundsOf(objs: CanvasObject[]): Rect | null {
+export function boundsOf(objs: readonly Rect[]): Rect | null {
   if (!objs.length) return null
   const x = Math.min(...objs.map((o) => o.x))
   const y = Math.min(...objs.map((o) => o.y))

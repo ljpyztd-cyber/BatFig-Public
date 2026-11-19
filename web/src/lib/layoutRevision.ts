@@ -26,13 +26,13 @@ import { currentProjectId } from '@/lib/session'
 const revisions = new Map<string, string>()
 
 /** `pj::name`。`null` 项目（未打开项目时退回数据目录 layouts/）也是一档。 */
-const keyOf = (name: string) => `${currentProjectId() ?? ''}::${name}`
+const keyOf = (name: string, pj: string | null = currentProjectId()) => `${pj ?? ''}::${name}`
 
-export const knownLayoutRevision = (name: string): string | undefined => revisions.get(keyOf(name))
+export const knownLayoutRevision = (name: string, pj?: string | null): string | undefined => revisions.get(keyOf(name, pj))
 
-export function rememberLayoutRevision(name: string, revision: string | null): void {
-  if (revision) revisions.set(keyOf(name), revision)
-  else revisions.delete(keyOf(name))
+export function rememberLayoutRevision(name: string, revision: string | null, pj?: string | null): void {
+  if (revision) revisions.set(keyOf(name, pj), revision)
+  else revisions.delete(keyOf(name, pj))
 }
 
 /** 仅供用例：模块级 Map 会跨用例活下来 */

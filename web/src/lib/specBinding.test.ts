@@ -17,7 +17,10 @@ import {
   type SpecCatalogEntry,
 } from './specBinding'
 
-const builtin = () => builtinCatalog().find((e) => e.id === DEFAULT_PROFILE_ID)!
+// These snapshot fixtures exercise the upstream 8 pt / 80 mm contract, not
+// whichever profile the product currently chooses for a new document.
+const SNAPSHOT_PROFILE_ID = 'lab-publication-v1'
+const builtin = () => builtinCatalog().find((e) => e.id === SNAPSHOT_PROFILE_ID)!
 
 /** 一条内容被改过的"全局现值"（把最小字号放宽到 6pt）。 */
 function loosened(base: SpecCatalogEntry, version = '2.0.0'): SpecCatalogEntry {
@@ -159,6 +162,6 @@ describe('快照的内容', () => {
   })
 
   it('快照与内置那份逐条相同（不是"差不多"）', () => {
-    expect(sameRules(bindingFor(builtin()).snapshot, loadProfile(DEFAULT_PROFILE_ID))).toBe(true)
+    expect(sameRules(bindingFor(builtin()).snapshot, loadProfile(SNAPSHOT_PROFILE_ID))).toBe(true)
   })
 })

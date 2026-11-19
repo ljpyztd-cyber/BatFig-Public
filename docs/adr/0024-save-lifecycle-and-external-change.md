@@ -10,7 +10,7 @@
 
 | 问题 | 裁决 |
 |---|---|
-| 保存状态放哪 | `documentStore.saveState`，六个值的**文档字段**；不是 `window` 事件 |
+| 保存状态放哪 | 自动恢复继续用 `documentStore.saveState`；正式命名文件使用 `namedTarget` / `savedCheckpoint` / `namedSaveState`（2026-10-04 修订，见 §10） |
 | `recovery_available` / `read_only` | **不进那个枚举**，走正交的 `docNotice`（见 §2） |
 | 外部修改基线 | 内容 hash（`base_revision`），强于 updatedAt（`base`）；带了就以它为准 |
 | 「磁盘上应该没有这份文件」 | 哨兵 `base_revision=absent`，**判据两条边都钉住** |
@@ -18,8 +18,8 @@
 | 冲突未决时 | 只写本机副本，一次都不再撞磁盘；出口 = 重新加载 / 明确覆盖 / 另存为 |
 | 「另存为」呢 | **同一份判据**（2026-09-03 补，见 §3d）——不是第二套 |
 | 崩溃恢复 | 主文档照常打开，本机副本挪进 `tavotto.recovery.<id>` 等裁决 |
-| `⌘S` | **真的保存**（等到写完）；`⇧⌘S` 才是「另存为画布文件」 |
-| 关闭保护 | 只在 `dirty` / `saving` / `save_error` / `conflict` 时拦 |
+| `⌘S` | 等待当前命名文件真实写完；无命名目标先命名，`⇧⌘S` 另存为；自动恢复成功不代替正式保存 |
+| 关闭保护 | `namedSave.hasPendingDocumentChanges` / `hasPendingCanvasChanges` 是内容检查点判据；覆盖保存中、失败、冲突和已变化事务 |
 | 版本检查点 | 记 `canvasId` + `canvasName`；恢复落到**它自己那张画布** |
 | 排队中的写入属于哪个项目 | **排队那一刻**的 pj，跟着载荷走 |
 
@@ -176,7 +176,8 @@ hash 这一份」——不然前端根本拿不到基线；而 `send_file` 留�
 
 ## 7. 关闭保护：先读状态再冲刷
 
-`beforeunload` 只在 `hasUnsavedWork()` 为真时拦。顺序很要紧：**先读状态再
+`beforeunload` 先结算输入与手势，再按 §10 的 `hasPendingDocumentChanges()`
+判断。顺序仍是**先读判据再冲刷**。原实现的教训是：**先读状态再
 冲刷**——反过来的话 `flushAutosave()` 把状态推成 `saving`，而 `saving` 属于
 「有未落盘的工作」，于是一份干干净净的文档每次刷新都弹一次「确定离开吗」，
 用户学会的是无脑点确定，那时候真该拦的那一次也拦不住了。
@@ -198,3 +199,32 @@ hash 这一份」——不然前端根本拿不到基线；而 `send_file` 留�
 - **编辑历史面板的形态**：现有版本抽屉已经区分 undo 栈 / 检查点 / 恢复，
   但它的入口仍在文档菜单里。左上区域的独立入口留给 Prompt 08 的左栏改造，
   免得同一块区域两个 Session 各摆一次。
+
+## 10. BatFig：正式保存与自动恢复分开（2026-10-04）
+
+用户明确要求 Ctrl+S 更新当前命名文档，且撤销到保存点应恢复已保存状态。原先
+`saveNow()` 只等自动恢复槽位完成，另存为没有绑定后续目标，不能满足此要求。
+
+- `lib/namedSave.ts` 编排正式文件保存；`documentStore` 仍是唯一文档与历史入口。
+  `namedTarget` 含项目、文件名、已读修订号，`savedCheckpoint` 是正式保存的内容，
+  `namedSaveState` 只记在途/错误/冲突。原 `saveState` / `dirty` 留给自动恢复，
+  其回执不推进正式检查点；schema 3 不增加运行时字段。
+- 检查点的唯一内容投影是 `lib/documentCheckpoint.ts`，比较全部画布内容，不按
+  历史长度/栈位置。排除更新时间、活动标签及来源派生四字段
+  `script / cost / fileKind / pxW`；几何、原生尺寸、文字、override 均保留。
+  撤销回该内容即 clean，重做离开即 dirty，截断历史也不破坏判据。
+- 保存先结算焦点输入、手势和事务，再捕获完整快照、项目与载入代次。成功只记录
+  **发送的那份**检查点，期间继续编辑返回 `stale`，不能放行关闭。跨文档或跨项目
+  的迟到回执不改新文档；写入与修订号缓存都使用捕获的项目。
+- 命名文件沿用 `base_revision` / `absent` / 409，不跳过外部修改保护。本机只记
+  文档 id 到命名目标的关系；重开草稿后重新读取正式文件建立检查点，不把草稿当
+  正式保存。无命名目标时 Ctrl+S 请求命名。
+- 有项目的启动恢复仅使用该项目的 `projectDoc` 映射，不读跨标签页共享的全局
+  `currentDoc`。无映射不开别的项目的文档，原最近列表保留。无项目旧工作区保留
+  单槽兼容，但已明确归属某项目的条目不能自动恢复到无项目会话；异步读取后复查项目。
+- 刷新、关窗、换文档、换项目、关闭画布标签共用 namedSave 的 pending 判据；
+  `beforeunload` 顺序为结算输入 → 读判据 → 冲刷草稿。自动恢复仍保留原队列、
+  原子写与冲突处理，派生 metadata 也继续写入恢复槽位。
+
+看护：`web/src/lib/namedSave.test.ts`、`store/saveStateMachine.test.ts`、
+`lib/closeGuard.test.ts`、`components/LayoutDialog.test.tsx`。

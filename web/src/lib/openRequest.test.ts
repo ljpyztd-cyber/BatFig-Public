@@ -297,6 +297,22 @@ describe('applyOpenRequest', () => {
     expect(formatMessage(useUiStore.getState().status)).toContain('目录不存在')
   })
 
+  it('取消切项目：不在旧项目落图或打开选择器，也不报错误或继续 native 交接', async () => {
+    const load = vi.fn(async () => {})
+    useAssetStore.setState({ load, panels: [panel('Fig1.pdf')] } as never)
+    useProjectStore.setState({ open: vi.fn(async () => null) })
+    const before = useUiStore.getState().status
+    expect(await applyOpenRequest({
+      project: '/other', stem: 'Fig1', pick: 'plot.py', native: NATIVE_ID,
+    })).toBe('cancelled')
+    expect(load).not.toHaveBeenCalled()
+    expect(useRuntimeAssetStore.getState().loadAssets).not.toHaveBeenCalled()
+    expect(receive).not.toHaveBeenCalled()
+    expect(useFigurePickerStore.getState().script).toBeNull()
+    expect(useDocumentStore.getState().doc.objects).toHaveLength(0)
+    expect(useUiStore.getState().status).toBe(before)
+  })
+
   /**
    * `tavotto run` 的交接。CLI 此刻正阻塞在「Waiting for Tavotto desktop…」
    * 上，用户的 Python 一行都还没跑——所以**每条出口都要把它排进确认队列**，

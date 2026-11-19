@@ -6,6 +6,7 @@
 - **前端唯一桌面感知点是 `web/src/lib/desktop.ts`**：组件不得直接 import
   `@tauri-apps/*`；每个能力都有浏览器回退（vitest 看护）。菜单事件 id 与
   `src-tauri/src/main.rs` 严格同源（`tavotto:menu`）。
+- BatFig 关闭保护统一经 `lib/closeGuard.ts`：文档 / 项目切换、画布标签关闭与桌面关窗复用 `namedSave.hasPendingDocumentChanges`。桌面先订阅再 arm，重入先 hold；保存失败、冲突或保存旧快照不放行。浏览器关闭 / 刷新保留原生 beforeunload 提示，不能承诺浏览器提供自定义三选一。关闭画布标签仅隐藏，不删除画布或历史；UI 会话经 `closeCanvasWithSession` 保存和恢复。
 - `checkUpdateOnStartup()` 按 `isDesktop()` 只查一条更新通道（桌面归 Tauri，
   浏览器归 `/api/update/*`）。壳侧细节见 `src-tauri/AGENTS.md`。
 - **查到新版怎么说出口**（2026-09-12）：启动时弹一次 `components/UpdateNoticeDialog.tsx`

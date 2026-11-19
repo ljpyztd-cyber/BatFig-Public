@@ -1,3 +1,14 @@
+# BatFig
+
+[简体中文](README.zh-CN.md) · [Run from source](BATFIG.md)
+
+BatFig is a local editor for Matplotlib figures used in battery and materials research. Import curves from CSV, edit plotted objects, align multipanel figures by their axes, and export vector PDF or PNG. Axis titles and tick labels default to 8 pt on the final page. Panel letters default to regular Arial at 20 pt.
+
+BatFig is an independent derivative of [Tavotto v0.17.0](https://github.com/Tavotto/Tavotto/tree/v0.17.0), with BatFig changes made in October 2026. It is distributed under [AGPL-3.0-only](LICENSE). Upstream copyright and [trademark notices](TRADEMARKS.md) are retained.
+
+<details>
+<summary>Original Tavotto documentation</summary>
+
 <p align="center">
   <img src="https://raw.githubusercontent.com/Tavotto/Tavotto/main/assets/readme/hero.svg" width="100%"
        alt="Tavotto — a visual editor for matplotlib and AI-generated scientific figures. Edit figures visually. Keep scripts untouched.">
@@ -681,3 +692,5 @@ See [TRADEMARKS.md](TRADEMARKS.md).
 ---
 
 If Tavotto saves you an afternoon on your next figure, consider starring the repository.
+
+</details>

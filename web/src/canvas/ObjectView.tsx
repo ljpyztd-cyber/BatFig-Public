@@ -8,6 +8,7 @@ import { mmToWorld, useViewportStore } from '@/store/viewportStore'
 import type { CanvasObject } from '@/types/document'
 import { isLinear, objectRotation, panelRotation } from '@/types/document'
 import { PATH_HIT_SHAPES } from '@/lib/shapeGeometry'
+import { isAdditiveSelection } from '@/lib/selectionModifiers'
 import { startMoveDrag } from './interactions'
 import { openQuickEdit } from './quickEditStore'
 import { ArrowView } from './ArrowView'
@@ -49,14 +50,14 @@ export const ObjectView = memo(function ObjectView({ obj }: { obj: CanvasObject 
     // 一起进元素检查器的对齐工具条，编辑态不退。
     const ui = useUiStore.getState()
     if (ui.elementPanelId && ui.elementPanelId !== obj.id) {
-      const joinsMixed = e.shiftKey && obj.type !== 'panel'
+      const joinsMixed = isAdditiveSelection(e) && obj.type !== 'panel'
       if (!joinsMixed) ui.setElementPanel(null)
     }
 
     const sel = useSelectionStore.getState()
     // 成组的对象点谁都是整组：选择、移动、属性都对整组生效
     const mates = groupMates(obj.id)
-    if (e.shiftKey) {
+    if (isAdditiveSelection(e)) {
       if (sel.ids.includes(obj.id)) {
         sel.set(sel.ids.filter((id) => !mates.includes(id)))
         return
@@ -96,6 +97,7 @@ export const ObjectView = memo(function ObjectView({ obj }: { obj: CanvasObject 
 
   const onDoubleClick = (e: React.MouseEvent) => {
     e.stopPropagation()
+    if (isAdditiveSelection(e)) return
     if (obj.type === 'text') useUiStore.getState().setEditingText(obj.id)
     else if (obj.type === 'panel') {
       // 可参数化面板双击进图内编辑，普通面板双击进裁剪

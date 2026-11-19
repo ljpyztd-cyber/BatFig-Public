@@ -30,6 +30,7 @@ import { useAssetStore } from './assetStore'
 import { useDocumentStore } from './documentStore'
 import { useProfileStore } from './profileStore'
 import { useRenderStore } from './renderStore'
+import { refreshCanvasFonts, useCanvasFontRuntime } from '@/lib/canvasFontRuntime'
 
 /** 文档静下来多久之后才查一遍（ms）。指针交互期间另有闸门，见 `schedule()`。 */
 export const VALIDATION_DEBOUNCE_MS = 250
@@ -198,6 +199,9 @@ export function startValidation(): () => void {
 
   schedule()
 
+  void refreshCanvasFonts()
+  const stopFonts = useCanvasFontRuntime.subscribe(() => schedule())
+
   const stopDoc = useDocumentStore.subscribe((s) => {
     if (s.documentId !== documentId) {
       documentId = s.documentId
@@ -252,6 +256,7 @@ export function startValidation(): () => void {
     stopRender()
     stopAssets()
     stopProfiles()
+    stopFonts()
   }
 }
 

@@ -10,11 +10,14 @@
  *
  * 后端的响应由用例手动放行（deferred），时序完全由用例决定，不靠睡眠碰运气。
  */
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { armNoProjectRecovery, type RecentProject } from '@/lib/api'
 import { startTutorial, useTutorialStore } from '@/lib/onboarding/tutorial'
 import { currentProjectId, setCurrentProjectId } from '@/lib/session'
 import { useProjectStore } from './projectStore'
+
+// 此组量请求/换代串行；离开答复在 projectSwitchGuard.test.ts 单独控制。
+vi.mock('@/lib/closeGuard', () => ({ requestLeaveDocument: vi.fn(async () => true) }))
 
 interface Pending {
   url: string

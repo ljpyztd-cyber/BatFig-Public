@@ -657,7 +657,8 @@
     "undone": "撤销：{{label}}",
     "panelRebuilt": "已按源脚本重新构建",
     "panelRerenderedNoRerun": "已按当前修改重新渲染；源脚本没有重跑",
-    "rebuildFailed": "无法重新构建。{{error}}"
+    "rebuildFailed": "无法重新构建。{{error}}",
+    "alignAxesSyncing": "坐标轴布局尚未就绪。读取坐标轴后重试，或切换为图片边界。"
   },
   "tabs": {
     "allCanvases": "全部画布",
@@ -727,7 +728,9 @@
     "versionTimeline": "文档版本…",
     "zoomIn": "放大",
     "zoomOut": "缩小",
-    "zoomValue": "缩放 {{percent}}%"
+    "zoomValue": "缩放 {{percent}}%",
+    "saveTip": "保存当前文档到磁盘",
+    "saveNotYet": "尚未保存"
   },
   "update": {
     "banner": "工具已更新，刷新后使用新版本",
@@ -740,5 +743,18 @@
     "fast_edit_entered": "你的改动会保存到当前 Tavotto 文档，原始文件不动。",
     "multi_select": "用选区旁的浮动栏对齐和分布。",
     "problem_found": "左侧「问题」可定位对象和属性字段。"
+  },
+  "csvImport": {
+    "open": "导入 CSV 曲线",
+    "title": "从 CSV 创建通用曲线",
+    "description": "UTF-8、逗号分隔、首行为列名。选择数值列；原始数据和列映射会保留在当前项目中。",
+    "file": "CSV 文件",
+    "rows_other": "已读取 {{count}} 行数据",
+    "x": "X 数据列",
+    "ys": "Y 数据列",
+    "xLabel": "X 轴标题与单位",
+    "yLabel": "Y 轴标题与单位",
+    "hash": "原始数据 SHA-256：{{hash}}",
+    "create": "生成并添加到画布"
   }
 }

@@ -128,6 +128,14 @@ export const ROLE_PROFILES: Record<string, RoleProfile> = {
     primary: ['facecolor', 'cmap', 'vmin', 'vmax', 'marker', 'size', 'edgecolor', 'linewidth', 'alpha'],
     more: ['label', 'hatch', 'linestyle', 'visible'],
   },
+  // QuadMesh (pcolormesh) and other scalar-mapped collections expose their
+  // color controls in the manifest; the common collection role must surface
+  // these before outline styling rather than hiding the grouped fields in More.
+  collection: {
+    primary: ['cmap', 'vmin', 'vmax', 'label', 'facecolor', 'edgecolor', 'linewidth', 'alpha', 'visible'],
+    more: ['hatch', 'linestyle'],
+    pairRows: [['vmin', 'vmax']],
+  },
   // 填充区域 / 形状：**填充一组、描边一组**，与画布图形同一套词汇和排版
   // （审计 T21）。以前纹理夹在描边色与透明度之间——它是填充的一部分，
   // 该挨着填充色。线型从「更多」提上来，与画布图形的描边组一致。
@@ -265,7 +273,7 @@ export const ROLE_PROFILES: Record<string, RoleProfile> = {
   // 整张图只有三件事：图幅、背景色、透明背景——全部在首屏（审计 T11）。
   // 透明背景开着时背景色画了也不显形，按开关收起；用户改过的照样显示
   figure: {
-    primary: ['size_mm', 'facecolor', 'transparent'],
+    primary: ['size_mm', 'facecolor', 'transparent', 'axes_transparent'],
     visibleWhen: {
       facecolor: (read) => read('transparent') !== true,
     },

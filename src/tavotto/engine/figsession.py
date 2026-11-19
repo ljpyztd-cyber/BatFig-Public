@@ -353,7 +353,8 @@ class LiveFigureSession:
         state = self.states[stem]
         self.out_dir.mkdir(parents=True, exist_ok=True)
         t0 = time.perf_counter()
-        man = manifest_mod.build_manifest(state, stem)
+        with overrides_mod.local_font_render_context(state.fig):
+            man = manifest_mod.build_manifest(state, stem)
         t1 = time.perf_counter()
         # **传文件对象、且 `newline=""`，不许传路径。** matplotlib 拿到路径时走
         # `cbook.to_filehandle` → `open(fname, "w", encoding=…)`——**没有
@@ -376,7 +377,11 @@ class LiveFigureSession:
         dpi = preview_dpi or self.preview_dpi
 
         def _save(_plan) -> int:
-            with self.real_output(), open(svg_path, "w", encoding="utf-8", newline="") as fh:
+            with (
+                self.real_output(),
+                overrides_mod.local_font_render_context(state.fig),
+                open(svg_path, "w", encoding="utf-8", newline="") as fh,
+            ):
                 state.fig.savefig(fh, format="svg", dpi=dpi)
             try:
                 return svg_path.stat().st_size
@@ -496,7 +501,7 @@ class LiveFigureSession:
         w_in = float(state.fig.get_size_inches()[0])
         path = self.out_dir / f"{stem}_w{int(width)}.png"
         self.out_dir.mkdir(parents=True, exist_ok=True)
-        with self.real_output():
+        with self.real_output(), overrides_mod.local_font_render_context(state.fig):
             state.fig.savefig(path, format="png", dpi=max(50, int(width) / w_in))
         return {"path": str(path)}
 
@@ -513,7 +518,7 @@ class LiveFigureSession:
             w_in = float(state.fig.get_size_inches()[0])
             path = self.out_dir / f"{stem}__{tag}.png"
             self.out_dir.mkdir(parents=True, exist_ok=True)
-            with self.real_output():
+            with self.real_output(), overrides_mod.local_font_render_context(state.fig):
                 state.fig.savefig(path, format="png", dpi=max(50, int(width) / w_in))
         finally:
             overrides_mod.apply(state, prev)
@@ -549,7 +554,11 @@ class LiveFigureSession:
             warnings = overrides_mod.apply(state, patches)
             t1 = time.perf_counter()
             out.parent.mkdir(parents=True, exist_ok=True)
-            with self.real_output(), export_font_context(fmt):
+            with (
+                self.real_output(),
+                export_font_context(fmt),
+                overrides_mod.local_font_render_context(state.fig),
+            ):
                 state.fig.savefig(out, format=fmt, dpi=int(dpi), **export_format_kwargs(fmt))
             if timings is not None:
                 timings["patch_apply_ms"] = round((t1 - t0) * 1000.0, 3)

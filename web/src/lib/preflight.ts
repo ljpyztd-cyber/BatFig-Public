@@ -163,6 +163,7 @@ export interface PreflightTextSpec {
   text: string
   size_pt: number
   bold: boolean
+  italic?: boolean
   /** **生效**的字体族（没设过 = 默认族），不是空串——没量过与量到默认是两个答案 */
   font_family: string
   /** **生效**的科学文本解释档（没设过 = auto）。缺字形判据要量渲染表示，不是原文 */
@@ -684,7 +685,9 @@ function checkPanelAxes(panel: PreflightPanelSpec, profile: PublicationProfile, 
     }
 
     if (role === 'image' || role === 'colorbar') {
-      const cmap = field(el, 'cmap')
+      const rawCmap = field(el, 'cmap')
+      const cmap = rawCmap && typeof rawCmap === 'object' && (rawCmap as { type?: unknown }).type === 'custom'
+        ? 'custom' : rawCmap
       if (typeof cmap === 'string' && cmap) {
         const low = cmap.toLowerCase()
         if (badCmaps.has(low)) {
@@ -844,7 +847,15 @@ function checkTexts(spec: PreflightSpec, profile: PublicationProfile, sink: Sink
     }
     // 字形覆盖：量的是**渲染表示**（标记拆掉、该合成的已合成），
     // 判据与 `engine/preflight.py` 同源，读同一张生成的覆盖表。
-    const { missing, substituted } = textDiagnostics(t.text, t.interpretation)
+    const { missing, substituted, unavailable } = textDiagnostics(t.text, t.interpretation, {
+      fontFamily: family, bold: t.bold, italic: t.italic,
+    })
+    if (unavailable) {
+      sink.add('canvas-font-unavailable', pf('canvasFontUnavailable', { family }), {
+        objectIds: [t.id], detail: { family }, prop: 'fontFamily',
+      })
+      continue
+    }
     if (missing.length) {
       const chars = missing.join('')
       sink.add('glyph-missing', pf('textGlyphMissing', { chars, count: String(missing.length) }), {
@@ -1087,6 +1098,7 @@ export function buildSpec(
         text: o.type === 'text' ? o.text : '',
         size_pt: o.type === 'text' ? o.sizePt : 0,
         bold: o.type === 'text' ? o.bold : false,
+        italic: o.type === 'text' ? o.italic : undefined,
         // 生效族，不是文档里存的那个（没设过时存的是 undefined）。缺省值
         // 只有 `lib/typography` 一处，这里不写第二个。
         font_family: o.type === 'text' ? effectiveCanvasFamily(o) : '',

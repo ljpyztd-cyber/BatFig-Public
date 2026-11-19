@@ -336,11 +336,14 @@ describe('行里的控件与属性页同一条写入路径', () => {
     const input = host.querySelector('input[type="color"]') as HTMLInputElement
     await act(async () => {
       typeInto(input, '#ff0000')
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
     })
     flushPreviewFrame()
     const glyphs = svgNode('axes_0.title').querySelector('g[transform]') as SVGElement
     expect(glyphs.style.getPropertyValue('fill')).toBe(css('#ff0000'))
     expect(engineRender).not.toHaveBeenCalled()
+    expect(overrideOf('axes_0.title', 'color')).toBeUndefined()
+    await act(async () => input.dispatchEvent(new Event('change', { bubbles: true })))
     expect(overrideOf('axes_0.title', 'color')).toBe('#ff0000')
   })
 

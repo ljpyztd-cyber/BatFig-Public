@@ -30,6 +30,11 @@ vi.mock('@/lib/api', async (importOriginal) => ({
 import { ApiError, REVISION_ABSENT, fetchLayout, fetchLayoutNames, saveLayout } from '@/lib/api'
 import { LayoutDialog } from '@/components/LayoutDialog'
 import { forgetLayoutRevisions } from '@/lib/layoutRevision'
+import { setCurrentProjectId } from '@/lib/session'
+import { cancelLeaveRequest, useLeaveGuard } from '@/lib/closeGuard'
+import { literal } from '@/i18n'
+import { type ProjectDocument } from '@/types/document'
+import { useDocumentStore } from '@/store/documentStore'
 import { useProjectStore } from '@/store/projectStore'
 import { useUiStore } from '@/store/uiStore'
 
@@ -87,21 +92,36 @@ const clickSave = async () => {
   })
 }
 
-beforeEach(() => {
+beforeEach(async () => {
   vi.clearAllMocks()
+  localStorage.clear()
   forgetLayoutRevisions()
+  setCurrentProjectId('p1')
+  useDocumentStore.setState({ saveState: 'clean', saveIssue: null })
+  await useDocumentStore.getState().switchDocument(LAYOUT as ProjectDocument, 'initial')
   useProjectStore.setState({ project: { open: true, id: 'p1', document_dir: '/figs/a/tavottofile' } })
   mockSave.mockResolvedValue({ ok: true, revision: 'rev-new' })
   mockFetch.mockResolvedValue({ doc: LAYOUT, revision: 'rev-disk' })
 })
 
 afterEach(async () => {
+  cancelLeaveRequest()
   if (root) await act(async () => root.unmount())
   document.body.innerHTML = ''
   useUiStore.setState({ layoutOpen: false })
 })
 
 describe('另存为的基线', () => {
+  it('保存成功后不再请求清单，清单刷新失败不能改判写入结果', async () => {
+    await open()
+    mockNames.mockRejectedValue(new Error('list unavailable'))
+    await clickSave()
+    expect(mockSave).toHaveBeenCalledTimes(1)
+    expect(mockNames).toHaveBeenCalledTimes(1)
+    expect(mockNames).toHaveBeenCalledWith('p1')
+    expect(useUiStore.getState().layoutOpen).toBe(false)
+    expect(useDocumentStore.getState().namedTarget?.revision).toBe('rev-new')
+  })
   it('本窗口没确认过这个名字时发 absent 哨兵，而不是不带基线', async () => {
     await open()
     await clickSave()
@@ -134,6 +154,56 @@ describe('另存为的基线', () => {
     })
     await clickSave()
     expect(mockSave.mock.calls[0][2]).toBe('rev-disk')
+  })
+})
+
+describe('异步读取的归属', () => {
+  it('读取期间当前文档的新修改不被迟到响应覆盖', async () => {
+    let resolve!: (value: { doc: unknown; revision: string }) => void
+    mockFetch.mockReturnValueOnce(new Promise((done) => { resolve = done }))
+    await open(['Fig 1'], 'load')
+    const id = useDocumentStore.getState().documentId
+    await act(async () => { buttonByText('载入')!.click() })
+    await act(async () => {
+      useDocumentStore.getState().commit(literal('new edit'), (doc) => { doc.page.w = 157 })
+      resolve({ doc: LAYOUT, revision: 'late' })
+    })
+    expect(useDocumentStore.getState().documentId).toBe(id)
+    expect(useDocumentStore.getState().doc.page.w).toBe(157)
+    expect(useLeaveGuard.getState().request).toBeNull()
+    expect(useUiStore.getState().layoutOpen).toBe(true)
+  })
+
+  it('读取期间换了文档，迟到响应不能替换新的文档', async () => {
+    let resolve!: (value: { doc: unknown; revision: string }) => void
+    mockFetch.mockReturnValueOnce(new Promise((done) => { resolve = done }))
+    await open(['Fig 1'], 'load')
+    await act(async () => { buttonByText('载入')!.click() })
+    await act(async () => {
+      await useDocumentStore.getState().switchDocument({ ...LAYOUT, project: { id: 'other', name: 'Other' } } as ProjectDocument, 'other')
+      resolve({ doc: LAYOUT, revision: 'late' })
+    })
+    expect(useDocumentStore.getState().projectMeta.name).toBe('Other')
+    expect(useDocumentStore.getState().namedTarget).toBeNull()
+  })
+
+  it('旧项目的列表返回后不混入新项目清单', async () => {
+    await open([], 'load')
+    let resolve!: (value: string[]) => void
+    mockNames.mockReturnValueOnce(new Promise((done) => { resolve = done }))
+    await act(async () => {
+      setCurrentProjectId('p2')
+      useProjectStore.setState({ project: { open: true, id: 'p2' } })
+    })
+    mockNames.mockResolvedValueOnce(['current-only'])
+    await act(async () => {
+      setCurrentProjectId('p3')
+      useProjectStore.setState({ project: { open: true, id: 'p3' } })
+    })
+    await act(async () => { resolve(['old-only']) })
+    expect(dialog().textContent).toContain('current-only')
+    expect(dialog().textContent).not.toContain('old-only')
+    expect(mockNames.mock.lastCall).toEqual(['p3'])
   })
 })
 

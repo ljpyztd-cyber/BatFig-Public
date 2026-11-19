@@ -10,6 +10,7 @@ import { engineTransport } from '@/lib/engineTransport'
 import { alignEntries, geomGid, geomTarget, segIntersectsRect } from '@/lib/elementGeom'
 import { DURATION, prefersReducedMotion, usePresence } from '@/lib/motion'
 import { geomHitsRect } from '@/lib/pathGeom'
+import { isAdditiveSelection } from '@/lib/selectionModifiers'
 import { pickBucket } from '@/lib/units'
 import { cn } from '@/lib/utils'
 import {
@@ -617,7 +618,7 @@ function ElementHitLayer({
    * shift 起手 = 加选（并入既有选区）；没拖动就是普通点空白，回落到 figure。
    */
   const startBandSelect = (e: React.PointerEvent) => {
-    const additive = e.shiftKey
+    const additive = isAdditiveSelection(e)
     const ui = useUiStore.getState()
     const base = additive ? [...ui.selectedGids] : []
     const origin = frac(e)
@@ -718,7 +719,8 @@ function ElementHitLayer({
         // 让位给「切这一边的刻度」的话用户永远换不到 twin 容器上。⇧ 归加选，
         // 两个修饰键各管一件事；⌥ 只换选中，不起拖动（这一层的 ⌥ 此前没有语义，
         // 拖动照旧不按修饰键分档）。
-        if (e.altKey && !e.shiftKey && cycleOverlapAt(obj, fx, fy)) {
+        const additive = isAdditiveSelection(e)
+        if (e.altKey && !additive && cycleOverlapAt(obj, fx, fy)) {
           setSpineHover(null)
           return
         }
@@ -730,6 +732,14 @@ function ElementHitLayer({
         // 刻度卡不出现、60 段轮廓原样留在覆盖层（issue #343）。
         // 中线（neutral）不切刻度，走下面的普通选中。
         const zone = spineZoneUnder(fx, fy, e.pointerType, hit)
+        // Modified clicks only select, including the border's tick hit zones.
+        // A click near an axes edge must never mutate ticks while building a selection.
+        const selectionGid = hit && hit.gid !== 'figure' ? hit.gid : zone?.gid
+        if (additive && selectionGid) {
+          ui.toggleSelectedGid(selectionGid)
+          setSpineHover(null)
+          return
+        }
         if (zone && zone.zone !== 'neutral' && zone.plan) {
           applyTickSidePlan(obj.id, zone.plan)
           const sel = ui.selectedGids.length === 1 ? ui.selectedGids[0] : null
@@ -741,14 +751,6 @@ function ElementHitLayer({
         if (zone && zone.zone === 'neutral' && (!hit || hit.gid === 'figure')) {
           // 偏出去的边框线本身：点它选中它的子图（框内那条本来就会命中子图）
           ui.setSelectedGid(zone.gid)
-          return
-        }
-        // shift 加选放开到任何具体元素（曲线、柱形系列、误差棒都要能多选，
-        // 批量改颜色/线宽靠它）。figure 除外——它是兜底命中，混进多选没有意义。
-        // 加选不挑几何能力：对齐与整组平移那边由 alignEntries 自行过滤，
-        // 非几何元素进了选区也不会搅乱它们。
-        if (e.shiftKey && hit && hit.gid !== 'figure') {
-          ui.toggleSelectedGid(hit.gid)
           return
         }
         // 空白处（兜底命中 figure）按下 → 拖出框选带；点一下不拖仍是选中 figure
@@ -792,7 +794,7 @@ function ElementHitLayer({
         // 一次选中，这里再弹一个内容输入框的话，用户要的是「换一个」，拿到的却是
         // 一次没要的编辑——而且弹层认的是 `pickElement` 的结果（重叠时恒为宿主），
         // 与刚刚轮换到的那一个根本不是同一个元素。「⌥ 只换选中」不给双击破例。
-        if (e.altKey && !e.shiftKey) return
+        if (e.altKey || isAdditiveSelection(e)) return
         const { fx, fy } = frac(e)
         const hit = pickElement(manifest, fx, fy, obj.lockedGids)
         // 双击带文字内容的元素 = 快速改字：弹层聚焦内容输入框

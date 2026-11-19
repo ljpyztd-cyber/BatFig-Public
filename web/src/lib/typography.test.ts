@@ -130,7 +130,7 @@ describe('取值语义', () => {
 
   it('不认识的族按继承处理，绝不当成一个新的族存进文档', () => {
     const o = text()
-    writeCanvasText(o, 'fontFamily', 'Times New Roman')
+    writeCanvasText(o, 'fontFamily', 'No Such Font')
     expect('fontFamily' in o).toBe(false)
     expect(effectiveCanvasFamily({ fontFamily: 'Comic Sans' as never })).toBe(
       CANVAS_TEXT_DEFAULT_FAMILY,
@@ -181,7 +181,7 @@ describe('校验与规整', () => {
     expect(coerceTypography('weight', 'bolder')).toEqual({ ok: false, reason: 'not_an_option' })
     expect(coerceTypography('halign', 'justify')).toEqual({ ok: false, reason: 'not_an_option' })
     expect(coerceTypography('fontFamily', 'monospace')).toEqual({ ok: true, value: 'monospace' })
-    expect(coerceTypography('fontFamily', 'Arial')).toEqual({ ok: false, reason: 'not_an_option' })
+    expect(coerceTypography('fontFamily', 'Arial')).toEqual({ ok: true, value: 'Arial' })
     // 图内那侧的选项由 manifest 给：同一个名字在两侧的答案可以不同
     expect(coerceTypography('fontFamily', 'Arial', { options: ['serif', 'Arial'] })).toEqual({
       ok: true,

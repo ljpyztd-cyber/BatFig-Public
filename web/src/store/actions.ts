@@ -6,22 +6,35 @@ import { rescueFocus } from '@/lib/focusRescue'
 import { newId } from '@/lib/id'
 import { flipCapture } from '@/lib/motion'
 import { emitActivity } from '@/lib/activity'
-import { effectiveOverride, effectiveOverrideIndex } from '@/lib/effectiveOverride'
+import { effectiveOverride, effectiveOverrideIndex, upsertOverrides } from '@/lib/effectiveOverride'
+import { colormapAliasGids } from '@/lib/colormapAlias'
+import type { ColormapValue } from '@/lib/customColormap'
+import { newPanelOverrides } from '@/lib/panelBackground'
+import { panelGridReadingOrder } from '@/lib/panelGrid'
+import { PANEL_LABEL_INSET, planPanelGridLabels } from '@/lib/panelGridLabels'
 import { applyAlign, boundsOf, readingOrder, type AlignMode } from '@/lib/geometry'
+import { round4, sameAfterRound4 } from '@/lib/axesLayout'
 import { clamp } from '@/lib/units'
 import { modKey } from '@/lib/utils'
 import { captureTelemetry } from '@/lib/telemetry'
+import { bindNamedDocumentTarget, saveCurrentDocument, settleDocumentInput, type NamedDocumentTarget } from '@/lib/namedSave'
+import { currentContentKey } from '@/lib/documentCheckpoint'
+import { currentProjectId } from '@/lib/session'
+import { requestLeaveDocument } from '@/lib/closeGuard'
 import {
   engineInvalidate,
   type CapturedFigureDescriptor,
   type ManifestElement,
+  type Manifest,
   type PanelInfo,
 } from '@/lib/api'
 import { detachPlan, legendPlacementPlan, restoreFollowPlan, type LegendPlacement } from '@/lib/legendModel'
 import type { SidePlan } from '@/lib/tickSides'
 import type { StylePlan, StylePreset, StyleTextEntry } from '@/lib/stylePresets'
 import { TEXT_EFFECTS } from '@/lib/textEffects'
-import { canvasTextDefaults, writeCanvasText } from '@/lib/typography'
+import { canvasTextDefaults, isExactTextFamily, writeCanvasText } from '@/lib/typography'
+import { resolveDocumentSpec } from '@/lib/specBinding'
+import { useProfileStore } from './profileStore'
 import { reflowPatches, sizeSignature } from '@/lib/layoutGroups'
 import { releaseOwned } from '@/lib/styleOwned'
 import {
@@ -42,16 +55,18 @@ import type {
 } from '@/types/document'
 import { emptyProject, objectLabel, type ProjectDocument } from '@/types/document'
 import { useAssetStore } from './assetStore'
+import { useArrangeStore } from './arrangeStore'
+import { readCanvasAlignment } from './canvasAlignment'
+import { readPanelGrid } from './panelGrid'
 import {
   readAutosaveDoc,
-  saveNow,
   useDocumentStore,
   type CommitOptions,
   type HistoryEntry,
 } from './documentStore'
 import { finishActiveGesture } from './gestureCoordinator'
 import { useInteractionStore } from './interactionStore'
-import { renderKeyOf, useRenderStore } from './renderStore'
+import { exactPanelManifest, renderKeyOf, useRenderStore } from './renderStore'
 import { useSelectionStore } from './selectionStore'
 import { askConfirm, useUiStore } from './uiStore'
 import { useViewportStore } from './viewportStore'
@@ -115,7 +130,7 @@ export function addPanel(info: PanelInfo, atX?: number, atY?: number) {
     script: info.script ?? null,
     cost: info.cost,
     // 继承「写回原始文件」的基线，这样编辑态看到的就是文件当前的样子
-    overrides: info.baked_overrides ? structuredClone(info.baked_overrides) : [],
+    overrides: newPanelOverrides(!!info.script && info.capability?.status === 'editable', info.baked_overrides),
     name: info.name,
     x: clamp(atX != null ? atX - w / 2 : (page.w - w) / 2, -w * 0.9, page.w - w * 0.1),
     y: clamp(atY != null ? atY - h / 2 : (page.h - h) / 2, -h * 0.9, page.h - h * 0.1),
@@ -133,8 +148,8 @@ export function addPanel(info: PanelInfo, atX?: number, atY?: number) {
 /**
  * 把一张试运行捕获的 Figure 作为 RuntimeFigureAsset 面板放上画布
  * （ADR 0013）。fileId 是描述符里的稳定 asset id（不透明标识）；描述块
- * 持久化进文档，重开 / 项目搬移后据此恢复。overrides 从空开始——它没有
- * 「写回基线」可继承（没有原件就没有写回）。
+ * 持久化进文档，重开 / 项目搬移后据此恢复。没有「写回基线」可继承，
+ * 新面板只添加透明图底的默认值（没有原件就没有写回）。
  */
 export function addRuntimePanel(desc: CapturedFigureDescriptor, atX?: number, atY?: number) {
   const page = doc().page
@@ -155,7 +170,7 @@ export function addRuntimePanel(desc: CapturedFigureDescriptor, atX?: number, at
       fingerprint: desc.source_fingerprint,
       sizeMm: [w, h],
     },
-    overrides: [],
+    overrides: newPanelOverrides(true),
     name: desc.stem,
     x: clamp(atX != null ? atX - w / 2 : (page.w - w) / 2, -w * 0.9, page.w - w * 0.1),
     y: clamp(atY != null ? atY - h / 2 : (page.h - h) / 2, -h * 0.9, page.h - h * 0.1),
@@ -169,23 +184,29 @@ export function addRuntimePanel(desc: CapturedFigureDescriptor, atX?: number, at
   return obj
 }
 
+/** Defaults for every new canvas text entry point, resolved from the active spec. */
+export function currentCanvasTextDefaults() {
+  return canvasTextDefaults(resolveDocumentSpec(doc().profile, useProfileStore.getState().catalog()).profile)
+}
+
 export function addText(partial: Partial<TextObject> = {}) {
   const page = doc().page
-  const d = canvasTextDefaults()
+  const d = currentCanvasTextDefaults()
   const obj: TextObject = {
     id: newId('t'),
     type: 'text',
-    text: t('objectType.text'),
+    text: isExactTextFamily(d.fontFamily) ? t('inspector:text.exactFontDefaultText') : t('objectType.text'),
     x: page.w / 2 - 20,
     y: page.h / 2 - 4,
     w: 40,
     h: 5,
     // 排版默认值只有 `lib/typography.canvasTextDefaults()` 一处。
-    // `fontFamily` 刻意不填：新建的文字「没设过字体」，跟着文档默认族走。
+    // Arial 规范显式记录真实 Arial；旧规范保持原有的字段缺席语义。
     sizePt: d.sizePt,
     bold: d.weight === 'bold',
     color: d.color,
     align: d.halign,
+    ...(d.fontFamily ? { fontFamily: d.fontFamily } : {}),
     ...partial,
   }
   commit(hist('addText'), (d) => {
@@ -242,7 +263,13 @@ export function addShape(shape: ShapeObject['shape'], partial: Partial<ShapeObje
 
 /** 按阅读顺序给所有面板添加 (a)(b)(c) 标签 */
 export function addSubLabels() {
-  const panels = readingOrder(doc().objects.filter((o) => o.type === 'panel'))
+  settleDocumentInput()
+  const grid = readPanelGrid()
+  const panels = panelGridReadingOrder(doc().objects.filter((o): o is PanelObject => o.type === 'panel' && !o.hidden))
+  if (grid.status === 'ready' && grid.patches.length === 0) {
+    const rank = new Map(grid.cells.map((cell) => [cell.panelId, cell.index]))
+    panels.sort((a, b) => rank.get(a.id)! - rank.get(b.id)!)
+  }
   if (!panels.length) {
     status(note('noPanels'))
     return
@@ -250,25 +277,33 @@ export function addSubLabels() {
   const created: string[] = []
   commit(hist('addSubLabels'), (d) => {
     panels.forEach((p, i) => {
-      const def = canvasTextDefaults()
+      const def = currentCanvasTextDefaults()
       const label: TextObject = {
         id: newId('t'),
         type: 'text',
         text: `(${String.fromCharCode(97 + i)})`,
-        x: p.x + 1.5,
-        y: p.y + 1,
+        panelLabelFor: p.id,
+        x: p.x + PANEL_LABEL_INSET.x,
+        y: p.y + PANEL_LABEL_INSET.y,
         w: 10,
         h: 5,
         sizePt: def.sizePt,
         color: def.color,
         align: def.halign,
-        // 子图序号约定是加粗的——这是这一个入口自己的取舍，
-        // 不是另一套默认值，所以它叠在共用默认值**之上**
-        bold: true,
+        ...(def.fontFamily ? { fontFamily: def.fontFamily } : {}),
+        bold: def.weight === 'bold',
       }
       created.push(label.id)
       d.objects.push(label)
     })
+    // Only use cells already occupied by these panels; a future layout plan must
+    // not move labels away from pictures that have not been rearranged yet.
+    if (grid.status === 'ready' && grid.patches.length === 0) {
+      const createdIds = new Set(created)
+      for (const patch of planPanelGridLabels(d.objects, [], grid.cells)) {
+        if (createdIds.has(patch.id)) Object.assign(d.objects.find((object) => object.id === patch.id)!, patch)
+      }
+    }
   })
   select(created)
   status(note('subLabelsAdded', { count: panels.length }))
@@ -386,11 +421,13 @@ export function duplicateSelected() {
   // 对任何 Proxy 都直接抛 DataCloneError（引擎级行为）——复制会 100% 静默失败。
   // 对已 finalize 的 plain object 克隆好再整体 push，与 clipboard.materializePaste 同一模式。
   const regroup = new Map<string, string>()
+  const panelIds = new Map<string, string>()
   const clones: CanvasObject[] = doc()
     .objects.filter((o) => ids.includes(o.id))
     .map((o) => {
       const copy = structuredClone(o)
       copy.id = newId(o.type[0])
+      if (o.type === 'panel') panelIds.set(o.id, copy.id)
       copy.x += 4
       copy.y += 4
       // 组要跟着复制成新的一份，否则副本会和原件粘成同一组
@@ -402,6 +439,13 @@ export function duplicateSelected() {
       return copy
     })
   if (!clones.length) return
+  // Resolve after every clone exists: labels may precede their panel in z order.
+  for (const copy of clones) {
+    if (copy.type !== 'text' || copy.panelLabelFor === undefined) continue
+    const target = panelIds.get(copy.panelLabelFor)
+    if (target) copy.panelLabelFor = target
+    else delete copy.panelLabelFor
+  }
   commit(hist('duplicateObjects'), (d) => {
     d.objects.push(...clones)
   })
@@ -524,48 +568,64 @@ function afterSwitch(): void {
  * 事务开着、值还没落定的中间态（与 runUndoRedo 同一条理由，issue #131）。
  */
 export async function runManualSave(): Promise<void> {
-  finishActiveGesture()
   const ui = useUiStore.getState()
-  const state = await saveNow()
-  if (state === 'saved' || state === 'clean') {
+  const result = await saveCurrentDocument()
+  if (result.status === 'needs_name') {
+    ui.setLayoutOpen(true, 'save')
+  } else if (result.status === 'saved') {
     ui.setStatus(msg('save.done', undefined, 'workspace'))
-  } else if (state === 'conflict') {
+  } else if (result.status === 'error' && useDocumentStore.getState().namedSaveState === 'conflict') {
     ui.setStatus(msg('save.conflict', undefined, 'workspace'), 'error')
-  } else if (state === 'save_error') {
+    ui.setLayoutOpen(true, 'save')
+  } else if (result.status === 'error') {
     ui.setStatus(msg('save.failed', undefined, 'workspace'), 'error')
   }
   // dirty / saving：保存期间用户又改了，或又排了一次写。那不是失败，
   // 顶栏的状态会继续往下走，这里不再多说一句话。
 }
 
-export async function newBlankDocument(): Promise<void> {
+export async function newBlankDocument(): Promise<boolean> {
+  if (!(await requestLeaveDocument({ kind: 'document' }))) return false
   const next = emptyProject()
-  if (!(await useDocumentStore.getState().switchDocument(next, newId('d'), confirmLoss))) return
+  if (!(await useDocumentStore.getState().switchDocument(next, newId('d'), confirmLoss))) return false
   afterSwitch()
   status(note('blankCreated'))
+  return true
 }
 
 /** 载入画布文件：每次载入都是一个新的编辑会话，因此给一个新的文档身份 */
-export async function openLayoutDocument(doc: FigureDocument | ProjectDocument): Promise<void> {
-  if (!(await useDocumentStore.getState().switchDocument(doc, newId('d'), confirmLoss))) return
+export async function openLayoutDocument(doc: FigureDocument | ProjectDocument, target?: NamedDocumentTarget): Promise<boolean> {
+  if (!(await requestLeaveDocument({ kind: 'document' }))) return false
+  if (target && target.projectId !== currentProjectId()) return false
+  if (!(await useDocumentStore.getState().switchDocument(doc, newId('d'), confirmLoss))) return false
+  if (target) bindNamedDocumentTarget(target)
   afterSwitch()
   const s = useDocumentStore.getState()
   status(note('documentLoaded', { name: s.projectMeta.name, count: s.canvases.length }))
+  return true
 }
 
 /** 切回本机自动保存过的文档；沿用它原来的身份，槽位因此不会分叉 */
-export async function openRecentDocument(id: string): Promise<void> {
+export async function openRecentDocument(id: string): Promise<boolean> {
+  if (!(await requestLeaveDocument({ kind: 'document' }))) return false
+  const before = useDocumentStore.getState()
+  const pj = currentProjectId()
+  const content = currentContentKey(before)
   const { doc: pd, notice } = await readAutosaveDoc(id)
+  settleDocumentInput()
+  const now = useDocumentStore.getState()
+  if (currentProjectId() !== pj || now.documentId !== before.documentId || now.loadSeq !== before.loadSeq || currentContentKey(now) !== content) return false
   if (!pd) {
     // schema 太新是「读不了」而不是「不见了」：文件好好的，说清楚是哪一种
     status(note(notice?.kind === 'schema_too_new' ? 'recentTooNew' : 'recentMissing'), 'error')
-    return
+    return false
   }
-  if (!(await useDocumentStore.getState().switchDocument(pd, id, confirmLoss))) return
+  if (!(await useDocumentStore.getState().switchDocument(pd, id, confirmLoss))) return false
   afterSwitch()
   // 未决的恢复副本跟着这份文档走：switchDocument 刚把待裁决事项清空了
   if (notice) useDocumentStore.setState({ docNotice: notice })
   status(note('documentReopened', { name: pd.project.name, count: pd.canvases.length }))
+  return true
 }
 
 /* --------------------------------- 页面 ----------------------------------- */
@@ -1167,26 +1227,6 @@ export async function rebuildPanel(panelId: string): Promise<RebuildOutcome> {
 }
 
 /**
- * 批量 upsert：**已经存在的那条原地改值，新的才追加**。
- *
- * 旧写法是 `filter(...)` 再 `push(...)`，等于把命中的那条挪到数组末尾。
- * override 数组的 JSON 就是变体键（`renderKeyOf`），顺序一变键就变，于是
- * 「改回同一个值」也会触发一次完全没必要的重渲染，撤销栈里还多一条看不出
- * 差别的历史。issue #131 里对齐一次能挪好几条，键churn 尤其明显。
- */
-function upsertOverrides(
-  panel: PanelObject,
-  patches: { gid: string; prop: string; value: unknown }[],
-) {
-  for (const p of patches) {
-    // 改生效的那条（重复条目时是最后一条，引擎 last-wins）；改第一条会被后面的遮住
-    const i = effectiveOverrideIndex(panel.overrides, p.gid, p.prop)
-    if (i >= 0) panel.overrides[i] = { ...panel.overrides[i], ...p }
-    else panel.overrides.push(p)
-  }
-}
-
-/**
  * 把几条 override **补进 `entry` 那条历史**并立即重渲染（`documentStore.amendLast`
  * 的面板版）。`entry` 已不是最后一条 / 有进行中的事务时什么都不写、返回 false。
  */
@@ -1224,6 +1264,65 @@ export function setOverrides(
   for (const prop of new Set(patches.map((p) => p.prop))) {
     emitActivity({ kind: 'element.property_changed', prop })
   }
+}
+
+/** A scale has several UI entry points. Remove competing writes before setting it. */
+export function setColormaps(
+  panelId: string,
+  elements: ManifestElement[],
+  manifest: Manifest | null | undefined,
+  value: ColormapValue,
+) {
+  finishActiveGesture()
+  const panel = findObject(panelId)
+  if (panel?.type !== 'panel' || !elements.length) return
+  const groups: { gids: Set<string>; selected: ManifestElement[] }[] = []
+  for (const element of elements) {
+    const gids = new Set(colormapAliasGids(manifest, element))
+    const existing = groups.find((group) => group.gids.has(element.gid))
+    if (existing) existing.selected.push(element)
+    else groups.push({ gids, selected: [element] })
+  }
+  const remove = new Set<number>()
+  const writes: { gid: string; prop: string; value: unknown }[] = []
+  const exact = exactPanelManifest(useRenderStore.getState(), panel)
+  for (const group of groups) {
+    // A script's unchanged builtin needs no override. Only exact facts can prove
+    // that; a stale preview after undo, or a custom map named "viridis", cannot.
+    if (typeof value === 'string' && exact === manifest && !panel.overrides.some((patch) => patch.prop === 'cmap' && group.gids.has(patch.gid))) {
+      const members = exact?.elements.filter((element) => group.gids.has(element.gid)) ?? []
+      if (members.length && members.every((element) => {
+        const field = element.editable.find((candidate) => candidate.prop === 'cmap')
+        return field?.value === value && (!field.cmap_current || (field.cmap_current.name === value && field.cmap_current.custom === false))
+      })) continue
+    }
+    const canBroadcast = (element: ManifestElement) => element.role === 'colorbar' && element.editable.some((field) => field.prop === 'cmap')
+    const bars = (manifest?.elements ?? []).filter((element) => canBroadcast(element) && group.gids.has(element.gid))
+    const selectedBar = group.selected.find(canBroadcast)
+    const broadcastIds = new Set(bars.flatMap((bar) => [bar.gid, ...(bar.colorbar_key ? [bar.colorbar_key] : [])]))
+    if (selectedBar) {
+      broadcastIds.add(selectedBar.gid)
+      if (selectedBar.colorbar_key) broadcastIds.add(selectedBar.colorbar_key)
+    }
+    // A colorbar setter broadcasts to its norm siblings; a bare mappable setter
+    // changes only itself. Prefer an existing broadcast writer to avoid key churn.
+    const existingBar = panel.overrides.findLast((patch) => patch.prop === 'cmap' && broadcastIds.has(patch.gid))
+    const gid = existingBar?.gid ?? selectedBar?.gid ?? bars[0]?.gid ?? group.selected[0].gid
+    const keepIndex = effectiveOverrideIndex(panel.overrides, gid, 'cmap')
+    panel.overrides.forEach((patch, index) => {
+      if (patch.prop === 'cmap' && group.gids.has(patch.gid) && index !== keepIndex) remove.add(index)
+    })
+    const current = keepIndex >= 0 ? panel.overrides[keepIndex] : undefined
+    if (!current || JSON.stringify(current.value) !== JSON.stringify(value)) writes.push({ gid, prop: 'cmap', value })
+  }
+  if (!remove.size && !writes.length) return
+  updateObject<PanelObject>(panelId, hist('setProp', { prop: propLabel('cmap') }), (target) => {
+    if (remove.size) target.overrides = target.overrides.filter((_, index) => !remove.has(index))
+    upsertOverrides(target, writes)
+  })
+  const next = findObject(panelId)
+  if (next?.type === 'panel') requestRender(next, true)
+  emitActivity({ kind: 'element.property_changed', prop: 'cmap' })
 }
 
 /**
@@ -1774,6 +1873,7 @@ export const alignModeMsg = (mode: AlignMode): UiMessage =>
 /** 在给定参照框里就地对齐；直接改传入对象（immer draft） */
 function alignIn(objs: CanvasObject[], mode: AlignMode, box: Rect): void {
   if (mode === 'hdist' || mode === 'vdist') {
+    if (objs.length < 2) return
     const k = mode === 'hdist' ? 'x' : 'y'
     const s = mode === 'hdist' ? 'w' : 'h'
     const sorted = objs.slice().sort((a, b) => a[k] - b[k])
@@ -1837,6 +1937,15 @@ export function alignSelectedTo(mode: AlignMode, ref: AlignRef) {
     status(blockedGroups ? note('blockedGroupsAll') : note('alignAllLocked'))
     return
   }
+  // Size matching remains a size operation on the entire image. The basis controls
+  // positional alignment/distribution only, with exact geometry sampled after gestures settle.
+  const positional = mode !== 'samew' && mode !== 'sameh'
+  const basis = positional ? useArrangeStore.getState().alignBasis : 'image'
+  const geometry = readCanvasAlignment(selectedObjects(), basis)
+  if (geometry.pending) {
+    status(note('alignAxesSyncing'))
+    return
+  }
   commit(hist('alignWithRef', { mode: alignModeMsg(mode), ref: alignRefMsg(ref) }), (d) => {
     const objs = d.objects.filter((o) => ids.includes(o.id))
     if (!objs.length) return
@@ -1845,13 +1954,26 @@ export function alignSelectedTo(mode: AlignMode, ref: AlignRef) {
       ref === 'page'
         ? { x: 0, y: 0, w: d.page.w, h: d.page.h }
         : ref === 'primary'
-          ? rectOf(primary)
-          : (boundsOf(objs) ?? rectOf(primary))
+          ? geometry.boxes.get(primary.id)!
+          : (boundsOf([...geometry.boxes.values()]) ?? rectOf(primary))
     // 以某个对象为参照时它自己不动，否则等宽等高会把基准也改掉
     const targets = objs.filter(
       (o) => movableIds.has(o.id) && (ref !== 'primary' || o !== primary),
     )
-    alignIn(targets, mode, box)
+    if (basis === 'image') alignIn(targets, mode, box)
+    else {
+      const proxies = targets.map((o) => ({ ...o, ...geometry.boxes.get(o.id)! }))
+      alignIn(proxies, mode, box)
+      for (const proxy of proxies) {
+        const target = targets.find((o) => o.id === proxy.id)!
+        const before = geometry.boxes.get(proxy.id)!
+        const next = [target.x + proxy.x - before.x, target.y + proxy.y - before.y]
+        if (!sameAfterRound4([target.x, target.y], next)) {
+          target.x = round4(next[0])
+          target.y = round4(next[1])
+        }
+      }
+    }
   })
   const skipped = ids.length - movableIds.size
   if (skipped > 0) status(note('alignLockedSkipped', { count: skipped }))
@@ -2185,7 +2307,7 @@ export async function replacePanelAsset(panelId: string, info: PanelInfo): Promi
     o.script = info.script ?? null
     o.cost = info.cost
     o.name = info.name
-    o.overrides = info.baked_overrides ? structuredClone(info.baked_overrides) : []
+    o.overrides = newPanelOverrides(!!info.script && info.capability?.status === 'editable', info.baked_overrides)
     // 新素材的写回基线原样放进来：身份是那份基线存下的；此刻能拿到的 manifest 还是
     // **旧素材**的，按它抄会抄到另一张图的对象上（ADR 0083）
   }, { overrides: 'restored' })
